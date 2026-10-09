@@ -1,13 +1,29 @@
 package com.bancoxyz.bff.web.seguridad;
 
-import java.io.Serializable;
+import com.bancoxyz.bff.web.error.ManejadorDeErrores;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 
-/** Identidad guardada en la sesion del servidor. El navegador nunca la ve: solo tiene la cookie de sesion. */
-public record UsuarioWeb(long usuarioId, Long clienteId, String nombre, String rol) implements Serializable {
+/** Quien tiene la sesion, segun el id_token que firmo banco-auth (rol y cliente del banco). */
+public record UsuarioWeb(String usuario, Long usuarioId, Long clienteId, String rol, String origen) {
 
-    public static final String EJECUTIVO = "EJECUTIVO";
+    public static UsuarioWeb de(Authentication autenticacion) {
+        OidcUser oidc = (OidcUser) autenticacion.getPrincipal();
+        return new UsuarioWeb(oidc.getSubject(), numero(oidc.getClaim("usuario_id")), numero(oidc.getClaim("cliente_id")),
+                oidc.getClaimAsString("rol"), oidc.getClaimAsString("origen"));
+    }
 
     public boolean esEjecutivo() {
-        return EJECUTIVO.equals(rol);
+        return "EJECUTIVO".equals(rol);
+    }
+
+    public void exigirEjecutivo() {
+        if (!esEjecutivo()) {
+            throw new ManejadorDeErrores.AccesoDeEjecutivo();
+        }
+    }
+
+    private static Long numero(Object valor) {
+        return valor instanceof Number n ? n.longValue() : null;
     }
 }

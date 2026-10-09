@@ -17,10 +17,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Id de correlacion leido o generado aqui y propagado al core, con una linea de log por solicitud.
+ * Id de correlacion leido o generado aqui, con una linea de log por solicitud.
  *
- * <p>Con el mismo id en el log de este BFF y en el del core se sigue una solicitud de punta a punta. El valor
- * recibido se valida con un patron estricto porque se escribe en el log. No se registra la query: puede traer datos.</p>
+ * <p>Va antes que la cadena de seguridad para que tambien los 401/403 lleven el id. Con el mismo id en el log del BFF y
+ * en el del core se sigue una solicitud de punta a punta. El valor recibido se valida con un patron estricto porque se
+ * escribe en el log (un encabezado con saltos de linea permitiria inyectar lineas falsas). No se registra la query.</p>
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)

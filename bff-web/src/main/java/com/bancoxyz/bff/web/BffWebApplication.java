@@ -5,10 +5,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
- * Backend for Frontend del navegador: la banca en linea del cliente y la consola del ejecutivo.
- *
- * <p>Pantallas grandes y complejas: datos completos (tasas, intereses, anomalias del batch), paginacion con
- * metadatos, series listas para graficar y un panel que junta en una respuesta lo que el core entrega en varias.</p>
+ * BFF del canal web (navegador): login con banco-auth, sesion HttpOnly + CSRF, datos completos y vistas agregadas
+ * (panel del cliente y consola del ejecutivo) sobre cuentas-service, clientes-service y pagos-service.
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan

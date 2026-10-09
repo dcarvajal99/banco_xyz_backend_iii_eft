@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Banco XYZ · Banca en linea</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<header class="barra">
+    <div class="marca"><span class="logo">XYZ</span> Banco XYZ <small>Banca en linea</small></div>
+    <div id="sesion" class="sesion"></div>
+</header>
+
+<main>
+    <div id="aviso" class="aviso oculto"></div>
+
+    <!-- Sin sesion -->
+    <section id="vista-ingreso" class="oculto">
+        <div class="tarjeta ingreso">
+            <h1>Bienvenido</h1>
+            <p>Ingrese con su usuario del banco. La clave se escribe en el servidor de autenticacion del banco, nunca en
+                esta pagina.</p>
+            <a class="boton primario" href="/oauth2/authorization/banco-auth">Ingresar</a>
+        </div>
+    </section>
+
+    <!-- Cliente -->
+    <section id="vista-cliente" class="oculto">
+        <h1 id="saludo"></h1>
+        <div class="totales">
+            <div class="tarjeta total"><span>Disponible</span><strong id="disponible"></strong></div>
+            <div class="tarjeta total"><span>Deuda vigente</span><strong id="deuda"></strong></div>
+        </div>
+        <h2>Mis cuentas</h2>
+        <div id="cuentas" class="cuentas"></div>
+
+        <div id="detalle" class="tarjeta oculto">
+            <h2 id="detalle-titulo"></h2>
+            <table>
+                <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripcion</th><th class="num">Monto</th><th>Origen</th></tr></thead>
+                <tbody id="movimientos"></tbody>
+            </table>
+            <div class="paginador">
+                <button id="mov-anterior" class="boton">Anterior</button>
+                <span id="mov-pagina"></span>
+                <button id="mov-siguiente" class="boton">Siguiente</button>
+            </div>
+            <h3>Estados de cuenta anuales</h3>
+            <table>
+                <thead><tr><th>Anio</th><th class="num">Movimientos</th><th class="num">Depositos</th><th class="num">Cargos</th><th class="num">Saldo neto</th></tr></thead>
+                <tbody id="estados"></tbody>
+            </table>
+        </div>
+
+        <div class="columnas">
+            <div class="tarjeta">
+                <h2>Operar</h2>
+                <div class="pestanas">
+                    <button class="pestana activa" data-form="form-transferencia">Transferir</button>
+                    <button class="pestana" data-form="form-servicio">Pagar servicio</button>
+                    <button class="pestana" data-form="form-deposito">Depositar</button>
+                </div>
+                <form id="form-transferencia" class="formulario">
+                    <label>Desde <select name="cuentaOrigen" class="cuentas-ahorro"></select></label>
+                    <label>Cuenta de destino <input name="cuentaDestino" type="number" min="1" required></label>
+                    <label>Monto ($) <input name="monto" type="number" min="1" step="1" required></label>
+                    <button class="boton primario">Transferir</button>
+                </form>
+                <form id="form-servicio" class="formulario oculto">
+                    <label>Desde <select name="cuentaOrigen" class="cuentas-ahorro"></select></label>
+                    <label>Servicio <select name="convenio">
+                        <option>Luz Chile</option><option>Aguas Andinas</option><option>Movistar</option><option>Gas Natural</option>
+                    </select></label>
+                    <label>Monto ($) <input name="monto" type="number" min="1" step="1" required></label>
+                    <button class="boton primario">Pagar</button>
+                </form>
+                <form id="form-deposito" class="formulario oculto">
+                    <label>En la cuenta <select name="cuentaDestino" class="cuentas-todas"></select></label>
+                    <label>Monto ($) <input name="monto" type="number" min="1" step="1" required></label>
+                    <button class="boton primario">Depositar</button>
+                </form>
+                <div id="resultado-pago" class="resultado oculto"></div>
+            </div>
+            <div class="tarjeta">
+                <h2>Avisos</h2>
+                <ul id="avisos" class="lista"></ul>
+                <h2>Ultimas operaciones</h2>
+                <ul id="pagos" class="lista"></ul>
+            </div>
+        </div>
+
+        <div class="tarjeta">
+            <h2>Mi perfil</h2>
+            <form id="form-perfil" class="formulario en-linea">
+                <label>Correo <input name="email" type="email"></label>
+                <label>Telefono <input name="telefono" placeholder="+56 9 1234 5678"></label>
+                <label>Direccion <input name="direccion"></label>
+                <button class="boton">Guardar</button>
+            </form>
+        </div>
+    </section>
+
+    <!-- Ejecutivo -->
+    <section id="vista-ejecutivo" class="oculto">
+        <h1>Consola del ejecutivo</h1>
+        <div class="columnas">
+            <div class="tarjeta">
+                <h2>Clientes</h2>
+                <table>
+                    <thead><tr><th>Id</th><th>Nombre</th><th>Usuario</th><th>Origen</th><th></th></tr></thead>
+                    <tbody id="clientes"></tbody>
+                </table>
+            </div>
+            <div class="tarjeta">
+                <h2 id="cuentas-cliente-titulo">Cuentas del cliente</h2>
+                <table>
+                    <thead><tr><th>Cuenta</th><th>Tipo</th><th class="num">Saldo</th><th>Estado</th><th></th></tr></thead>
+                    <tbody id="cuentas-cliente"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="columnas">
+            <div class="tarjeta">
+                <h2>Abrir cuenta</h2>
+                <form id="form-apertura" class="formulario">
+                    <label>Cliente (id) <input name="clienteId" type="number" min="1" required></label>
+                    <label>Tipo <select name="tipo"><option>ahorro</option><option>prestamo</option><option>hipoteca</option></select></label>
+                    <label>Alias <input name="alias" maxlength="40"></label>
+                    <button class="boton primario">Abrir</button>
+                </form>
+            </div>
+            <div class="tarjeta">
+                <h2>Alta de cliente</h2>
+                <form id="form-alta" class="formulario">
+                    <label>Nombre <input name="nombre" required></label>
+                    <label>Edad <input name="edad" type="number" min="18" max="110" required></label>
+                    <label>Correo <input name="email" type="email"></label>
+                    <label>Usuario <input name="usuario" pattern="[a-z0-9.]{4,60}" required></label>
+                    <label>Clave inicial <input name="claveInicial" type="password" minlength="10" required></label>
+                    <button class="boton primario">Crear</button>
+                </form>
+            </div>
+        </div>
+        <div class="tarjeta">
+            <h2>Calidad de la migracion (batch)</h2>
+            <div id="calidad"></div>
+            <h3>Reporte de transacciones diarias</h3>
+            <table>
+                <thead><tr><th>Fecha</th><th class="num">Transacciones</th><th class="num">Debitos</th><th class="num">Creditos</th><th class="num">Anomalias</th></tr></thead>
+                <tbody id="resumen-diario"></tbody>
+            </table>
+        </div>
+    </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
