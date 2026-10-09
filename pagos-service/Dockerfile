@@ -1,6 +1,6 @@
-# Imagen de transferencias-service: API de transferencias: inicia la saga.
+# Imagen de pagos-service: API de transferencias: inicia la saga.
 # Se construye desde el codigo fuente (multi-etapa): la imagen final trae solo un JRE y la aplicacion, sin Maven ni el
-# codigo. Construccion aislada: docker build -t banco-xyz/transferencias-service:1.0.0 transferencias-service/  (o desde el docker-compose.yaml).
+# codigo. Construccion aislada: docker build -t banco-xyz/pagos-service:1.0.0 pagos-service/  (o desde el docker-compose.yaml).
 
 FROM maven:3.9-eclipse-temurin-21 AS construccion
 WORKDIR /fuente
@@ -11,10 +11,10 @@ RUN mvn -B -q -ntp dependency:go-offline
 #    al cambiar el codigo solo cambia la ultima capa, la mas liviana.
 COPY src src
 RUN mvn -B -q -ntp package -DskipTests \
- && java -Djarmode=tools -jar target/transferencias-service-1.0.0.jar extract --layers --launcher --destination capas
+ && java -Djarmode=tools -jar target/pagos-service-1.0.0.jar extract --layers --launcher --destination capas
 
 FROM eclipse-temurin:21-jre-alpine
-LABEL org.opencontainers.image.title="transferencias-service" \
+LABEL org.opencontainers.image.title="pagos-service" \
       org.opencontainers.image.description="Banco XYZ - API de transferencias: inicia la saga" \
       org.opencontainers.image.version="1.0.0"
 # Usuario sin privilegios con uid fijo: el volumen de certificados se entrega legible solo para el.

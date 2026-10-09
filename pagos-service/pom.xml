@@ -13,10 +13,10 @@
     </parent>
 
     <groupId>com.bancoxyz</groupId>
-    <artifactId>transferencias-service</artifactId>
+    <artifactId>pagos-service</artifactId>
     <version>1.0.0</version>
-    <name>transferencias-service</name>
-    <description>Banco XYZ - API de transferencias e inicio de la saga coreografiada sobre Kafka</description>
+    <name>pagos-service</name>
+    <description>Banco XYZ - procesamiento de pagos, transferencias y depositos (saga sobre Kafka)</description>
 
     <properties>
         <java.version>17</java.version>

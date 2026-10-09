@@ -1,6 +1,6 @@
-# Imagen de banco-core-api: cuentas del banco y participante de la saga (reserva, acredita, compensa).
+# Imagen de clientes-service: cuentas del banco y participante de la saga (reserva, acredita, compensa).
 # Se construye desde el codigo fuente (multi-etapa): la imagen final trae solo un JRE y la aplicacion, sin Maven ni el
-# codigo. Construccion aislada: docker build -t banco-xyz/banco-core-api:1.0.0 banco-core-api/  (o desde el docker-compose.yaml).
+# codigo. Construccion aislada: docker build -t banco-xyz/clientes-service:1.0.0 clientes-service/  (o desde el docker-compose.yaml).
 
 FROM maven:3.9-eclipse-temurin-21 AS construccion
 WORKDIR /fuente
@@ -11,10 +11,10 @@ RUN mvn -B -q -ntp dependency:go-offline
 #    al cambiar el codigo solo cambia la ultima capa, la mas liviana.
 COPY src src
 RUN mvn -B -q -ntp package -DskipTests \
- && java -Djarmode=tools -jar target/banco-core-api-1.0.0.jar extract --layers --launcher --destination capas
+ && java -Djarmode=tools -jar target/clientes-service-1.0.0.jar extract --layers --launcher --destination capas
 
 FROM eclipse-temurin:21-jre-alpine
-LABEL org.opencontainers.image.title="banco-core-api" \
+LABEL org.opencontainers.image.title="clientes-service" \
       org.opencontainers.image.description="Banco XYZ - cuentas del banco y participante de la saga (reserva, acredita, compensa)" \
       org.opencontainers.image.version="1.0.0"
 # Usuario sin privilegios con uid fijo: el volumen de certificados se entrega legible solo para el.

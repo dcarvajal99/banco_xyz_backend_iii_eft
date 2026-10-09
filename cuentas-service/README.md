@@ -1,4 +1,4 @@
-# banco-core-api — Banco XYZ
+# cuentas-service — Banco XYZ
 
 Backend principal del Banco XYZ y único dueño de los datos y del dinero. Abre las cuentas del cierre vigente al
 arrancar, aplica las reglas que deben cumplirse sin importar el canal —no sobregirar, límite diario, bloqueo por PIN—
@@ -19,7 +19,7 @@ transferencias-service ya no entra con una clave Basic sino con un token `client
 | Paquete raíz | `com.bancoxyz.core` |
 | Stack | Spring Boot 3.5.16, Spring Cloud 2025.0.3, Spring Security (resource server), Spring Data JPA, Flyway, Spring Kafka, Resilience4j; se compila para Java 17 y corre sobre un JRE 21 |
 | Base de datos | PostgreSQL `banco_xyz`: esquema `public` (volcado SQL de semanas anteriores, el core solo lo lee) y esquema `core` (lo escribe el core con Flyway: `cliente`, `usuario`, `cuenta`, `tarjeta`, `operacion`, `reserva`, `evento_procesado`, `outbox`). En `nube` la URL (`jdbc:postgresql://db:5432/banco_xyz`) la entrega el Config Server |
-| Configuración central | `banco-xyz-cloud/configuracion/banco-core-api.properties` + `banco-core-api-nube.properties` + `application.properties` + `application-nube.properties` |
+| Configuración central | `banco-xyz-cloud/configuracion/cuentas-service.properties` + `cuentas-service-nube.properties` + `application.properties` + `application-nube.properties` |
 
 ## Su papel en la saga
 
@@ -92,7 +92,7 @@ transferencias-service. Con el circuito abierto no se insiste: los eventos sigue
 **La política no vive en el jar.** El `application.properties` del core no trae propiedades `resilience4j.*`: la política
 compartida `publicacion-kafka` está en `configuracion/application.properties`, la instancia `kafka` (con
 `base-config=publicacion-kafka` y `ErrorDePublicacion` como `record-exceptions` y `retry-exceptions`) en
-`banco-core-api.properties`, y `application-nube.properties` ajusta los valores para el entorno en contenedores. Las
+`cuentas-service.properties`, y `application-nube.properties` ajusta los valores para el entorno en contenedores. Las
 pruebas usan una copia en `src/test/resources/application-prueba.properties`, que `scripts/verificar_coherencia.sh`
 comprueba que sea idéntica a la central.
 
@@ -186,8 +186,8 @@ responde `503 CUENTA_OCUPADA` sin descontar.
 El Config Server responde solo por HTTPS y exige certificado de cliente del core más usuario y clave Basic
 (`spring.cloud.config.tls.*`, incluida `key-password`). Con `BANCO_CONFIG_FAIL_FAST=true` (lo fija el compose) el core no
 arranca si el Config Server lo rechaza. Se registra en Eureka como `BANCO-CORE-API` (instancia HTTPS, con el nombre
-`banco-core-api` por `EUREKA_INSTANCE_HOSTNAME`) contra **dos nodos que se replican** (`eureka-1` y `eureka-2` en `nube`).
-banco-auth y transferencias-service no conocen su dirección: la piden por nombre (`https://banco-core-api/api/v1`) con
+`cuentas-service` por `EUREKA_INSTANCE_HOSTNAME`) contra **dos nodos que se replican** (`eureka-1` y `eureka-2` en `nube`).
+banco-auth y transferencias-service no conocen su dirección: la piden por nombre (`https://cuentas-service/api/v1`) con
 Spring Cloud LoadBalancer. El core no depende de banco-auth para arrancar: el JWK Set se consulta al validar el primer
 token.
 
@@ -202,7 +202,7 @@ proveedor.
 
 ```
 com.bancoxyz.core/
-├── BancoCoreApiApplication.java
+├── CuentasServiceApplication.java
 ├── autenticacion/   ControladorDeAutenticacion, ServicioDeAutenticacion, Usuario, RepositorioUsuarios
 ├── cierre/          ArranqueConSincronizacion, SincronizadorDeCierre, LectorDeCierres, CierrePublicado
 ├── cliente/         ControladorDeClientes, Cliente, RepositorioClientes
@@ -229,7 +229,7 @@ recién creada y sin el volcado, el core arranca igual y responde `503 SIN_CIERR
 
 ## Imagen Docker
 
-Construcción multi-etapa desde el código fuente (`banco-core-api/Dockerfile`, contexto `banco-core-api/`):
+Construcción multi-etapa desde el código fuente (`cuentas-service/Dockerfile`, contexto `cuentas-service/`):
 
 | Aspecto | Valor |
 |---|---|
@@ -248,7 +248,7 @@ Variables que recibe del `docker-compose.yaml` de la raíz (valores por defecto 
 |---|---|
 | `BANCO_CONFIG_SERVER`, `BANCO_CONFIG_USUARIO`, `BANCO_CONFIG_CLAVE`, `BANCO_CONFIG_FAIL_FAST=true` | Config Server (con `fail-fast`, si lo rechaza el servicio no arranca) |
 | `BANCO_ALMACEN_CLAVE`, `BANCO_CERTIFICADOS=/certificados` | Clave de los `.p12` y carpeta de la PKI (volumen `certificados`, solo lectura) |
-| `EUREKA_INSTANCE_HOSTNAME=banco-core-api` | Nombre con que se registra en Eureka |
+| `EUREKA_INSTANCE_HOSTNAME=cuentas-service` | Nombre con que se registra en Eureka |
 | `BANCO_DB_USUARIO`, `BANCO_DB_CLAVE` | Usuario y clave de PostgreSQL |
 | `BANCO_CANAL_AUTENTICACION_CLAVE` | Clave Basic con que banco-auth entra al canal `AUTENTICACION` |
 
@@ -260,7 +260,7 @@ compose no los define.
 
 | Propiedad | En el jar (`application.properties`) | Config Server | Variable de entorno |
 |---|---|---|---|
-| `spring.datasource.url` | `jdbc:postgresql://localhost:5439/banco_xyz` | `jdbc:postgresql://db:5432/banco_xyz` (`banco-core-api-nube.properties`) | — |
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5439/banco_xyz` | `jdbc:postgresql://db:5432/banco_xyz` (`cuentas-service-nube.properties`) | — |
 | `spring.datasource.username` / `password` | `banco` / valor de desarrollo | — | `BANCO_DB_USUARIO`, `BANCO_DB_CLAVE` |
 | `spring.datasource.hikari.maximum-pool-size` / `server.tomcat.threads.max` | `20` / `100` | — | — |
 | `banco.core.canales.web`, `movil`, `cajero` (`clave`) | valores de desarrollo | — | `BANCO_CANAL_WEB_CLAVE`, `BANCO_CANAL_MOVIL_CLAVE`, `BANCO_CANAL_CAJERO_CLAVE` |
@@ -282,9 +282,9 @@ Desde la raíz del repositorio, con el compose:
 
 ```bash
 docker compose up -d --build                    # todo el ecosistema, en orden y por salud
-docker compose up -d --build banco-core-api     # solo el core y lo que necesita para arrancar (db, kafka, config, eureka)
+docker compose up -d --build cuentas-service     # solo el core y lo que necesita para arrancar (db, kafka, config, eureka)
 docker compose ps
-docker compose logs -f banco-core-api
+docker compose logs -f cuentas-service
 ```
 
 Como el puerto `8080` no se publica, las llamadas al core desde el equipo se hacen desde un contenedor de la red (los

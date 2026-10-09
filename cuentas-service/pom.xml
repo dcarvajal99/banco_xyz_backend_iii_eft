@@ -13,10 +13,10 @@
     </parent>
 
     <groupId>com.bancoxyz</groupId>
-    <artifactId>banco-core-api</artifactId>
+    <artifactId>cuentas-service</artifactId>
     <version>1.0.0</version>
-    <name>banco-core-api</name>
-    <description>Backend principal del Banco XYZ: duenno de los datos y de las reglas de negocio, agnostico del canal</description>
+    <name>cuentas-service</name>
+    <description>Banco XYZ - gestion de cuentas: apertura, cierre, mantenimiento, saldos y movimientos</description>
 
     <properties>
         <java.version>17</java.version>

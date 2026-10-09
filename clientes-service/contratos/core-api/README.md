@@ -1,6 +1,6 @@
 # Contrato del core
 
-Un archivo por forma de respuesta de `banco-core-api`. **El contrato son los nombres de los
+Un archivo por forma de respuesta de `clientes-service`. **El contrato son los nombres de los
 campos y su anidación**, no los valores, que son solo de ejemplo.
 
 - **El core (proveedor)** tiene una prueba que llama a cada endpoint y exige que el JSON real tenga

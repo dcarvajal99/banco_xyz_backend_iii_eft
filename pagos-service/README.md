@@ -1,4 +1,4 @@
-# transferencias-service — Banco XYZ
+# pagos-service — Banco XYZ
 
 Puerta de entrada de la saga coreografiada de transferencias del Banco XYZ. Recibe la solicitud de un cliente
 autenticado con OAuth 2.0, la prevalida contra el core, la guarda **PENDIENTE** en su propia base y responde de
@@ -19,8 +19,8 @@ Es a la vez **servidor de recursos** OAuth 2.0 (valida el token del cliente que 
 | Paquete raíz | `com.bancoxyz.transferencias` (`transferencia/`, `core/`, `evento/`, `outbox/`, `seguridad/`, `config/`) |
 | Stack | Spring Boot 3.5.16, Spring Cloud 2025.0.3, Spring Security (resource server y client), Resilience4j, Spring Kafka, Flyway |
 | Base de datos | PostgreSQL `banco_xyz`, esquema propio `transferencias` (Flyway `V1`): `transferencia`, `historial`, `evento_procesado`, `outbox`. En `nube` la URL (`jdbc:postgresql://db:5432/banco_xyz`) la entrega el Config Server |
-| Identidad ante el core | Token OAuth 2.0 `client_credentials` de banco-auth (cliente `transferencias-service`, scope `core.cuentas.leer`) más su certificado de cliente (mTLS). Ya no hay clave Basic |
-| Configuración central | `banco-xyz-cloud/configuracion/transferencias-service.properties` + `transferencias-service-nube.properties` + `application.properties` + `application-nube.properties` |
+| Identidad ante el core | Token OAuth 2.0 `client_credentials` de banco-auth (cliente `pagos-service`, scope `core.cuentas.leer`) más su certificado de cliente (mTLS). Ya no hay clave Basic |
+| Configuración central | `banco-xyz-cloud/configuracion/pagos-service.properties` + `pagos-service-nube.properties` + `application.properties` + `application-nube.properties` |
 
 ## API
 
@@ -78,16 +78,16 @@ sus transferencias.
 
 | Aspecto | Detalle |
 |---|---|
-| Flujo | `client_credentials` contra `banco.jwt.token-uri` (en `nube` `https://banco-auth:8081/oauth2/token`), cliente `transferencias-service`, scope `core.cuentas.leer`, autenticación `client_secret_basic` |
+| Flujo | `client_credentials` contra `banco.jwt.token-uri` (en `nube` `https://banco-auth:8081/oauth2/token`), cliente `pagos-service`, scope `core.cuentas.leer`, autenticación `client_secret_basic` |
 | Gestor | `AuthorizedClientServiceOAuth2AuthorizedClientManager` con `InMemoryOAuth2AuthorizedClientService` |
 | Caché | El token se reutiliza hasta **30 s antes de vencer** (`clockSkew(30 s)`): no hay una llamada a banco-auth por cada consulta al core |
-| Principal | Fijo: `transferencias-service`. Es un token del servicio, no del usuario, aunque la solicitud HTTP que lo origina traiga el JWT de un cliente |
+| Principal | Fijo: `pagos-service`. Es un token del servicio, no del usuario, aunque la solicitud HTTP que lo origina traiga el JWT de un cliente |
 | `RestClient` propio | El endpoint de tokens se llama con un `RestClient` aparte: sin balanceo (URL fija de banco-auth), con el bundle TLS del servicio (confía solo en la CA del banco) y timeouts de 1 s (conexión) y 3 s (lectura) |
 | Interceptor | `OAuth2ClientHttpRequestInterceptor` agrega `Authorization: Bearer <token de servicio>` a cada llamada al core |
 | Secreto | `BANCO_OAUTH_TRANSFERENCIAS_SECRETO` |
 
 El core acepta ese token si trae el scope `core.cuentas.leer` y el CN del certificado de cliente de la conexión es el
-`sub` del token (`transferencias-service`).
+`sub` del token (`pagos-service`).
 
 ## Validación PREVIA vs. DIFERIDA
 
@@ -122,7 +122,7 @@ solo mecanismo de reintento.
 
 El `application.properties` de este servicio **no trae ninguna propiedad `resilience4j.*`**. Las políticas son
 compartidas y se definen una vez en `configuracion/application.properties` como `configs` (`http-interno` y
-`publicacion-kafka`); `transferencias-service.properties` declara las instancias de este servicio con `base-config` y su
+`publicacion-kafka`); `pagos-service.properties` declara las instancias de este servicio con `base-config` y su
 excepción propia; `application-nube.properties` ajusta los valores para el entorno en contenedores. Las pruebas usan una
 copia en `src/test/resources/application-prueba.properties`, que `scripts/verificar_coherencia.sh` comprueba que sea
 idéntica a la central.
@@ -162,7 +162,7 @@ eventos espera en orden en la tabla hasta la próxima pasada, y nada se pierde m
 | Tópico | Dirección | Eventos |
 |---|---|---|
 | `transferencias.solicitadas` | Produce (outbox) | `TransferenciaSolicitada` |
-| `cuentas.reservas` | Consume (grupo `transferencias-service`) | `FondosReservados`, `FondosRechazados` |
+| `cuentas.reservas` | Consume (grupo `pagos-service`) | `FondosReservados`, `FondosRechazados` |
 | `cuentas.transferencias` | Consume (mismo grupo) | `TransferenciaCompletada`, `ReservaLiberada` |
 | `cuentas.reservas.DLT`, `cuentas.transferencias.DLT` | Produce | Mensajes que no se pudieron leer o procesar |
 
@@ -201,7 +201,7 @@ segundo de espera antes de ir a la DLT (`DefaultErrorHandler`). La copia de `Eve
 
 ## Imagen Docker
 
-Construcción multi-etapa desde el código fuente (`transferencias-service/Dockerfile`, contexto `transferencias-service/`):
+Construcción multi-etapa desde el código fuente (`pagos-service/Dockerfile`, contexto `pagos-service/`):
 
 | Aspecto | Valor |
 |---|---|
@@ -220,9 +220,9 @@ Variables que recibe del `docker-compose.yaml` de la raíz (valores por defecto 
 |---|---|
 | `BANCO_CONFIG_SERVER`, `BANCO_CONFIG_USUARIO`, `BANCO_CONFIG_CLAVE`, `BANCO_CONFIG_FAIL_FAST=true` | Config Server (con `fail-fast`, si lo rechaza el servicio no arranca) |
 | `BANCO_ALMACEN_CLAVE`, `BANCO_CERTIFICADOS=/certificados` | Clave de los `.p12` y carpeta de la PKI (volumen `certificados`, solo lectura) |
-| `EUREKA_INSTANCE_HOSTNAME=transferencias-service` | Nombre con que se registra en Eureka |
+| `EUREKA_INSTANCE_HOSTNAME=pagos-service` | Nombre con que se registra en Eureka |
 | `BANCO_DB_USUARIO`, `BANCO_DB_CLAVE` | Usuario y clave de PostgreSQL |
-| `BANCO_OAUTH_TRANSFERENCIAS_SECRETO` | Secreto del cliente OAuth `transferencias-service` |
+| `BANCO_OAUTH_TRANSFERENCIAS_SECRETO` | Secreto del cliente OAuth `pagos-service` |
 
 Depende (por salud) de `db`, `kafka`, `config-server`, `banco-core-api` y `banco-auth`, y publica `127.0.0.1:8082` y
 `127.0.0.1:9082`.
@@ -231,13 +231,13 @@ Depende (por salud) de `db`, `kafka`, `config-server`, `banco-core-api` y `banco
 
 | Propiedad | En el jar (`application.properties`) | Config Server | Variable de entorno |
 |---|---|---|---|
-| `spring.datasource.url` | `jdbc:postgresql://localhost:5439/banco_xyz` | `jdbc:postgresql://db:5432/banco_xyz` (`transferencias-service-nube.properties`) | — |
+| `spring.datasource.url` | `jdbc:postgresql://localhost:5439/banco_xyz` | `jdbc:postgresql://db:5432/banco_xyz` (`pagos-service-nube.properties`) | — |
 | `spring.datasource.username` / `password` | `banco` / valor de desarrollo | — | `BANCO_DB_USUARIO`, `BANCO_DB_CLAVE` |
 | `banco.core.url` / `descubrimiento` | `https://localhost:8080/api/v1` / `false` | `https://banco-core-api/api/v1` / `true` | — |
 | `banco.jwt.emisor` / `audiencia` / `jwk-set-uri` | `https://localhost:8081`, `banco-xyz`, `https://localhost:8081/oauth2/jwks` | Los mismos en `application.properties`; en `nube`, `https://banco-auth:8081` y `https://banco-auth:8081/oauth2/jwks` | — |
 | `banco.jwt.cache-jwks` | `30s` | — | — |
 | `banco.jwt.token-uri` | `https://localhost:8081/oauth2/token` (valor por defecto del proveedor OAuth) | `https://localhost:8081/oauth2/token`; en `nube`, `https://banco-auth:8081/oauth2/token` | — |
-| `spring.security.oauth2.client.registration.core.*` | cliente `transferencias-service`, `client_credentials`, scope `core.cuentas.leer` | — | `BANCO_OAUTH_TRANSFERENCIAS_SECRETO` (secreto) |
+| `spring.security.oauth2.client.registration.core.*` | cliente `pagos-service`, `client_credentials`, scope `core.cuentas.leer` | — | `BANCO_OAUTH_TRANSFERENCIAS_SECRETO` (secreto) |
 | `spring.kafka.bootstrap-servers` | `${BANCO_KAFKA:localhost:9092}` | `localhost:9092`; en `nube`, `kafka:9092` | `BANCO_KAFKA` (solo sin Config Server: con él manda el Config Server) |
 | `spring.kafka.listener.concurrency` / `banco.kafka.particiones` | `3` / `3` | `banco.kafka.particiones=3` | — |
 | `banco.outbox.intervalo-ms` | `500` | — | — |
@@ -252,9 +252,9 @@ Desde la raíz del repositorio, con el compose:
 
 ```bash
 docker compose up -d --build                           # todo el ecosistema, en orden y por salud
-docker compose up -d --build transferencias-service    # solo este servicio y lo que necesita para arrancar
+docker compose up -d --build pagos-service    # solo este servicio y lo que necesita para arrancar
 docker compose ps
-docker compose logs -f transferencias-service
+docker compose logs -f pagos-service
 ```
 
 La saga de punta a punta se recorre con `bash banco-xyz-cloud/scripts/saga_transferencias.sh`; el core caído y Kafka
