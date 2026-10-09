@@ -1,16 +1,14 @@
 package com.bancoxyz.pagos.evento;
 
-/** Topicos de la saga de transferencias. Cada servicio es dueno de los topicos que produce. */
+/** Topicos de Kafka que usa pagos-service. */
 public final class Topicos {
 
-    /** Lo produce pagos-service: TransferenciaSolicitada. */
-    public static final String SOLICITADAS = "transferencias.solicitadas";
-    /** Lo produce el core: FondosReservados, FondosRechazados. */
-    public static final String RESERVAS = "cuentas.reservas";
-    /** Lo produce antifraude-service: TransferenciaAprobada, TransferenciaRechazada. */
-    public static final String DECISIONES = "antifraude.decisiones";
-    /** Lo produce el core: TransferenciaCompletada, ReservaLiberada. */
-    public static final String TRANSFERENCIAS = "cuentas.transferencias";
+    /** Lo produce pagos-service: PagoSolicitado. */
+    public static final String PAGOS_SOLICITADOS = "pagos.solicitados";
+    /** Lo produce cuentas-service: TransaccionCompletada / TransaccionRechazada. */
+    public static final String MOVIMIENTOS = "cuentas.movimientos";
+    /** Aqui: OperacionSospechosa cuando una regla de fraude rechaza un pago. */
+    public static final String SEGURIDAD_ALERTAS = "seguridad.alertas";
 
     private Topicos() {
     }

@@ -38,7 +38,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
  *   <li>La copia del JWK Set dura {@code banco.jwt.cache-jwks}: una clave retirada deja de aceptarse a lo sumo en ese
  *       tiempo.</li>
  *   <li>Emisor, audiencia y vencimiento sin tolerancia (el valor por defecto de Spring acepta 60 s de mas).</li>
- *   <li>El JWK Set se pide por HTTPS confiando solo en la CA del banco (bundle {@code cliente-core}).</li>
+ *   <li>El JWK Set se pide por HTTPS confiando solo en la CA del banco (bundle {@code confianza}: este servicio no
+ *       llama a nadie por mTLS, solo necesita confiar en el certificado de banco-auth).</li>
  * </ul>
  */
 @Configuration
@@ -74,7 +75,7 @@ public class DecodificadorDeTokens {
     /** Sockets TLS con la CA del banco; sin el perfil tls (pruebas) se usan los del JDK. */
     private static SSLSocketFactory socketsTls(SslBundles bundles) {
         try {
-            return bundles.getBundle("cliente-core").createSslContext().getSocketFactory();
+            return bundles.getBundle("confianza").createSslContext().getSocketFactory();
         } catch (NoSuchSslBundleException sinPerfilTls) {
             return (SSLSocketFactory) SSLSocketFactory.getDefault();
         }

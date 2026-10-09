@@ -8,6 +8,6 @@ public class VersionNoSoportada extends EventoInvalido {
 
     public VersionNoSoportada(int version, String origen) {
         super("Version " + version + " del evento no soportada en " + origen + ": este servicio entiende hasta la "
-                + EventoDeTransferencia.VERSION_ACTUAL, null);
+                + EventoDeMovimiento.VERSION_ACTUAL, null);
     }
 }
