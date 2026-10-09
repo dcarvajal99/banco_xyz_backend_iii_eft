@@ -11,6 +11,8 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.slf4j.MDC;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -49,16 +51,20 @@ public class ConfiguracionGeneral {
         ejecutor.setQueueCapacity(0);
         ejecutor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         ejecutor.setThreadNamePrefix("portada-movil-");
+        // La correlacion y el token del usuario viajan al hilo de la tarea (token relay en ClienteCoreHttp).
         ejecutor.setTaskDecorator(tarea -> {
             Map<String, String> mdc = MDC.getCopyOfContextMap();
+            SecurityContext seguridad = SecurityContextHolder.getContext();
             return () -> {
                 try {
                     if (mdc != null) {
                         MDC.setContextMap(mdc);
                     }
+                    SecurityContextHolder.setContext(seguridad);
                     tarea.run();
                 } finally {
                     MDC.clear();
+                    SecurityContextHolder.clearContext();
                 }
             };
         });

@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.bancoxyz.bff.movil.core.CoreApi;
 import com.bancoxyz.bff.movil.core.CuentaCore;
 import com.bancoxyz.bff.movil.core.PaginaMovimientosCore;
-import com.bancoxyz.bff.movil.core.UsuarioAutenticadoCore;
+import com.bancoxyz.bff.movil.core.PagoCore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,8 +24,13 @@ class ProxyCoreConCacheTest {
 
     private final CoreApi coreSimulado = new CoreApi() {
         @Override
-        public UsuarioAutenticadoCore autenticar(String usuario, String password, String correlacion) {
-            return new UsuarioAutenticadoCore(3, 6L, usuario, "Jane Smith", "CLIENTE");
+        public PagoCore transferir(long origen, long destino, java.math.BigDecimal monto, String clave, String correlacion) {
+            return new PagoCore("p1", "TRANSFERENCIA", "SOLICITADO", null, monto);
+        }
+
+        @Override
+        public PagoCore pago(String id, String correlacion) {
+            return new PagoCore(id, "TRANSFERENCIA", "COMPLETADO", null, java.math.BigDecimal.ONE);
         }
 
         @Override
@@ -80,10 +85,10 @@ class ProxyCoreConCacheTest {
     }
 
     @Test
-    @DisplayName("Autenticar no se cachea; las paginas de movimientos si, por usuario, cuenta, pagina y tamano")
+    @DisplayName("El estado de un pago no se cachea; las paginas de movimientos si, por usuario, cuenta, pagina y tamano")
     void movimientosEnCache() {
         ProxyCoreConCache proxy = new ProxyCoreConCache(coreSimulado, reloj, 10);
-        assertThat(proxy.autenticar("jane.smith", "x", "c").nombre()).isEqualTo("Jane Smith");
+        assertThat(proxy.pago("p9", "c").estado()).isEqualTo("COMPLETADO");
         assertThat(proxy.movimientos(101, 3, 2, 5, "c").pagina()).isEqualTo(2);
         proxy.movimientos(101, 3, 2, 5, "c");
         assertThat(llamadasDeMovimientos).hasValue(1);

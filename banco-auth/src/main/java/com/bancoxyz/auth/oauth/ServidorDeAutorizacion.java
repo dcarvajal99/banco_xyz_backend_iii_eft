@@ -157,6 +157,8 @@ public class ServidorDeAutorizacion {
             boolean idToken = OidcParameterNames.ID_TOKEN.equals(contexto.getTokenType().getValue());
             if (accessToken) {
                 contexto.getClaims().audience(List.of(propiedades.audiencia()));
+                // azp: a que cliente OAuth se emitio (el BFF movil solo acepta tokens de la app).
+                contexto.getClaims().claim("azp", contexto.getRegisteredClient().getClientId());
             }
             Object principal = contexto.getPrincipal().getPrincipal();
             UsuarioDelBanco usuario = principal instanceof UsuarioGitHub github ? github.banco()

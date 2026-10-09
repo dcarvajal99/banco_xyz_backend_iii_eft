@@ -51,7 +51,6 @@ class ConfiguracionGeneralTest {
     }
 
     private static PropiedadesMovil propiedades(int hilosPortada) {
-        return new PropiedadesMovil(new PropiedadesMovil.Jwt("movil-jwt-secreto-de-desarrollo-cambiar-en-prod-0001"), 300, 7, 10,
-                hilosPortada);
+        return new PropiedadesMovil("banca-movil", "https://localhost:8102/api/v1", 10, hilosPortada);
     }
 }

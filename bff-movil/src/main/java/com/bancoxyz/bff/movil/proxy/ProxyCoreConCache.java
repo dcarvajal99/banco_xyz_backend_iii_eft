@@ -13,7 +13,7 @@ import com.bancoxyz.bff.movil.core.ClienteCoreHttp;
 import com.bancoxyz.bff.movil.core.CoreApi;
 import com.bancoxyz.bff.movil.core.CuentaCore;
 import com.bancoxyz.bff.movil.core.PaginaMovimientosCore;
-import com.bancoxyz.bff.movil.core.UsuarioAutenticadoCore;
+import com.bancoxyz.bff.movil.core.PagoCore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -57,11 +57,6 @@ public class ProxyCoreConCache implements CoreApi {
     }
 
     @Override
-    public UsuarioAutenticadoCore autenticar(String usuario, String password, String correlacion) {
-        return real.autenticar(usuario, password, correlacion);
-    }
-
-    @Override
     public List<CuentaCore> cuentasDeCliente(long clienteId, long usuarioId, String correlacion) {
         return leer("cuentas|" + usuarioId + "|" + clienteId, () -> real.cuentasDeCliente(clienteId, usuarioId, correlacion));
     }
@@ -70,6 +65,17 @@ public class ProxyCoreConCache implements CoreApi {
     public PaginaMovimientosCore movimientos(long cuentaId, long usuarioId, int pagina, int tamano, String correlacion) {
         return leer("movimientos|" + usuarioId + "|" + cuentaId + "|" + pagina + "|" + tamano,
                 () -> real.movimientos(cuentaId, usuarioId, pagina, tamano, correlacion));
+    }
+
+    /** Las escrituras y el estado de un pago no se guardan en cache: siempre van al servicio. */
+    @Override
+    public PagoCore transferir(long origen, long destino, java.math.BigDecimal monto, String clave, String correlacion) {
+        return real.transferir(origen, destino, monto, clave, correlacion);
+    }
+
+    @Override
+    public PagoCore pago(String id, String correlacion) {
+        return real.pago(id, correlacion);
     }
 
     public void vaciar() {

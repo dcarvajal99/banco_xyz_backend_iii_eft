@@ -2,7 +2,10 @@ package com.bancoxyz.bff.movil.seguridad;
 
 import java.io.IOException;
 
-import com.bancoxyz.bff.movil.error.RespuestaErrorMovil;
+import com.bancoxyz.bff.movil.error.Problemas;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -39,8 +42,9 @@ public class ErroresDeSeguridadMovil implements AuthenticationEntryPoint, Access
 
     public void escribir(HttpServletResponse response, int estado, String codigo, String mensaje) throws IOException {
         response.setStatus(estado);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
-        json.writeValue(response.getOutputStream(), new RespuestaErrorMovil(codigo, mensaje));
+        json.writeValue(response.getOutputStream(), Problemas.crear(HttpStatusCode.valueOf(estado), codigo, mensaje,
+                RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes a ? a.getRequest().getRequestURI() : "/"));
     }
 }

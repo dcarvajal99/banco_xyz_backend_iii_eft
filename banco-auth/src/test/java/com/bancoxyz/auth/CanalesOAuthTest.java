@@ -71,7 +71,7 @@ class CanalesOAuthTest extends PruebaOAuth {
                         .param("code", parametro(redireccion, "code")).param("redirect_uri", MOVIL)
                         .param("code_verifier", verificador)).andExpect(status().isOk()))
                 .get("access_token").asText()).getJWTClaimsSet().getClaims();
-        assertThat(claims).containsEntry("cliente_id", 1L).containsEntry("rol", "CLIENTE");
+        assertThat(claims).containsEntry("cliente_id", 1L).containsEntry("rol", "CLIENTE").containsEntry("azp", "banca-movil");
     }
 
     @Test

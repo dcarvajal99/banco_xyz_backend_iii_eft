@@ -25,15 +25,12 @@ class ContratoConsumidorTest {
             .enable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES).build();
 
     @Test
-    @DisplayName("Usuario autenticado, cuentas y pagina de movimientos se leen desde los contratos")
+    @DisplayName("Cuentas y pagina de movimientos de cuentas-service se leen desde los contratos")
     void leeLosContratos() throws Exception {
-        UsuarioAutenticadoCore usuario = estricto.readValue(CONTRATOS.resolve("usuario-autenticado.json").toFile(),
-                UsuarioAutenticadoCore.class);
         List<CuentaCore> cuentas = estricto.readValue(CONTRATOS.resolve("cuentas.json").toFile(), new TypeReference<>() {
         });
         PaginaMovimientosCore pagina = estricto.readValue(CONTRATOS.resolve("pagina-movimientos.json").toFile(),
                 PaginaMovimientosCore.class);
-        assertThat(usuario.clienteId()).isEqualTo(6L);
         assertThat(cuentas).hasSize(2);
         assertThat(pagina.contenido().get(0).monto()).isNegative();
     }
@@ -41,7 +38,7 @@ class ContratoConsumidorTest {
     @Test
     @DisplayName("Control negativo y lectura de errores del core")
     void negativoYErrores() throws Exception {
-        assertThatThrownBy(() -> estricto.readValue("{\"usuarioId\":1}", UsuarioAutenticadoCore.class))
+        assertThatThrownBy(() -> estricto.readValue("{\"contenido\":[]}", PaginaMovimientosCore.class))
                 .isInstanceOf(MismatchedInputException.class);
         assertThat(ErrorDelCore.desde(404, Files.readAllBytes(CONTRATOS.resolve("error-cuenta-no-encontrada.json")), estricto)
                 .getCodigo()).isEqualTo("CUENTA_NO_ENCONTRADA");

@@ -1,16 +1,16 @@
 package com.bancoxyz.bff.movil.core;
 
+import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * Lo que el BFF movil necesita del core. La implementan el cliente HTTP real y el proxy de cache, de modo que
- * los controladores no saben (ni les importa) si la respuesta vino de la red o de la cache.
- */
+/** Lo que la app necesita de los microservicios (cuentas-service y pagos-service). */
 public interface CoreApi {
-
-    UsuarioAutenticadoCore autenticar(String usuario, String password, String correlacion);
 
     List<CuentaCore> cuentasDeCliente(long clienteId, long usuarioId, String correlacion);
 
     PaginaMovimientosCore movimientos(long cuentaId, long usuarioId, int pagina, int tamano, String correlacion);
+
+    PagoCore transferir(long origen, long destino, BigDecimal monto, String claveIdempotencia, String correlacion);
+
+    PagoCore pago(String id, String correlacion);
 }
