@@ -2,7 +2,7 @@ package com.bancoxyz.bff.cajero.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Donde esta el core y con que credencial de servicio entra este BFF. */
+/** Donde esta cuentas-service. La credencial es un token client_credentials (ver TokenDeServicio), no una clave. */
 @ConfigurationProperties(prefix = "banco.core")
-public record PropiedadesCore(String url, String usuario, String clave) {
+public record PropiedadesCore(String url) {
 }

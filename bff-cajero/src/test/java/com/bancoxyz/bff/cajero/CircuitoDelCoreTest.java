@@ -53,7 +53,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @AutoConfigureMockRestServiceServer
 class CircuitoDelCoreTest {
 
-    static final String CORE = "https://localhost:8080/api/v1";
+    static final String CORE = "https://localhost:8100/api/v1";
     static final String ATM1 = "atm-001-secreto-de-desarrollo-0123456789";
     static final String PAN = "4000000000001018";
 

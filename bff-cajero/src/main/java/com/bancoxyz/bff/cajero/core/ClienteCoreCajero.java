@@ -13,13 +13,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.support.BasicAuthenticationInterceptor;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 /**
- * Cliente HTTP del core para el canal cajero.
+ * Cliente HTTP de cuentas-service para el canal cajero (por Eureka cuando banco.core.descubrimiento=true).
  *
  * <p>La identidad (tarjeta y terminal) y la correlacion llegan como parametros explicitos y no se leen
  * de ningun contexto ligado al hilo: el metodo hace exactamente lo que dice su firma.</p>
@@ -43,11 +43,12 @@ public class ClienteCoreCajero {
     private final CircuitBreakerFactory<?, ?> circuitos;
 
     public ClienteCoreCajero(RestClient.Builder builder, ObjectMapper json, PropiedadesCore core,
-                             CircuitBreakerFactory<?, ?> circuitos) {
+                             CircuitBreakerFactory<?, ?> circuitos, OAuth2AuthorizedClientManager gestorDeTokens) {
         this.circuitos = circuitos;
         this.http = builder
                 .baseUrl(core.url())
-                .requestInterceptor(new BasicAuthenticationInterceptor(core.usuario(), core.clave()))
+                // Token client_credentials propio (scope cajero.operar), no una clave fija; mas el certificado mTLS.
+                .requestInterceptor(TokenDeServicio.interceptor(gestorDeTokens))
                 .defaultStatusHandler(HttpStatusCode::isError, (solicitud, respuesta) -> {
                     throw ErrorDelCore.desde(respuesta.getStatusCode().value(), respuesta.getBody().readAllBytes(), json);
                 })

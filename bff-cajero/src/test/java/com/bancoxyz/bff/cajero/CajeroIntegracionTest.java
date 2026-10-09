@@ -62,7 +62,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @AutoConfigureMockRestServiceServer
 class CajeroIntegracionTest {
 
-    static final String CORE = "https://localhost:8080/api/v1";
+    static final String CORE = "https://localhost:8100/api/v1";
     static final String ATM1 = "atm-001-secreto-de-desarrollo-0123456789";
     static final String ATM2 = "atm-002-secreto-de-desarrollo-9876543210";
     static final String PAN = "4000000000001018";
@@ -281,7 +281,7 @@ class CajeroIntegracionTest {
     private void responderSesion(org.springframework.test.web.client.ResponseCreator respuesta) {
         core.expect(requestTo(CORE + "/autenticacion/tarjetas")).andExpect(method(HttpMethod.POST))
                 .andExpect(jsonPath("$.numeroTarjeta").value(PAN))
-                .andExpect(header(HttpHeaders.AUTHORIZATION, org.hamcrest.Matchers.startsWith("Basic ")))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer " + TokenDePrueba.TOKEN))
                 .andRespond(respuesta);
     }
 
