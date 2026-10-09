@@ -16,6 +16,7 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
@@ -32,7 +33,8 @@ import org.springframework.security.web.servlet.util.matcher.PathPatternRequestM
  *       puede presentarse con uno.</li>
  *   <li><b>Todo lo demas</b>: servidor de recursos OAuth 2.0. Un JWT de banco-auth (firma RS256 contra su JWK Set,
  *       emisor, audiencia {@code banco-xyz}, vencimiento) y el scope de cada operacion; el rol y el cliente salen de
- *       los claims del mismo token ({@link IdentidadDelToken}).</li>
+ *       los claims del mismo token ({@link IdentidadDelToken}); el certificado del llamante amarrado al token
+ *       ({@link FiltroCertificadoDeLlamante}).</li>
  * </ol>
  */
 @Configuration
@@ -73,14 +75,17 @@ public class ConfiguracionSeguridad {
 
     @Bean
     @Order(2)
-    public SecurityFilterChain cadenaDeClientes(HttpSecurity http, ProblemasDeSeguridad problemas) throws Exception {
+    public SecurityFilterChain cadenaDeClientes(HttpSecurity http, ProblemasDeSeguridad problemas,
+                                                PropiedadesClientes propiedades) throws Exception {
         comun(http, problemas)
                 .oauth2ResourceServer(o -> o.authenticationEntryPoint(problemas).accessDeniedHandler(problemas)
                         .jwt(Customizer.withDefaults()))
+                .addFilterAfter(new FiltroCertificadoDeLlamante(problemas, propiedades.relevosPermitidos()),
+                        BearerTokenAuthenticationFilter.class)
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
                                 "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/clientes", "/api/v1/clientes/*")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/clientes", "/api/v1/clientes/*", "/api/v1/clientes/*/avisos")
                         .hasAuthority("SCOPE_clientes.leer")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/clientes/*/perfil").hasAuthority("SCOPE_clientes.perfil")
                         .requestMatchers(HttpMethod.POST, "/api/v1/clientes").hasAuthority("SCOPE_clientes.administrar")

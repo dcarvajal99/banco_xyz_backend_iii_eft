@@ -122,4 +122,20 @@ class ClientesTest extends PruebaDeClientes {
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.codigo").value("TOKEN_INVALIDO"))
                 .andExpect(jsonPath("$.correlacionId").isNotEmpty());
     }
+
+    @Test
+    @DisplayName("cuentas-service (token de servicio con su certificado) lee la ficha de cualquier cliente para una apertura")
+    void tokenDeServicio() throws Exception {
+        var token = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()
+                .jwt(j -> j.subject("cuentas-service").claim("scope", java.util.List.of("clientes.leer")))
+                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("SCOPE_clientes.leer"));
+        var propio = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                .x509(PkiDePrueba.certificado("cuentas-service"));
+        var ajeno = org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors
+                .x509(PkiDePrueba.certificado("bff-web"));
+        mvc.perform(get("/api/v1/clientes/" + DIANA).with(s -> propio.postProcessRequest(token.postProcessRequest(s))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.nombre").value("Diana Prince"));
+        mvc.perform(get("/api/v1/clientes/" + DIANA).with(s -> ajeno.postProcessRequest(token.postProcessRequest(s))))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.codigo").value("CERTIFICADO_NO_CORRESPONDE"));
+    }
 }

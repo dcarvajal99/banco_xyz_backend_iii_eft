@@ -28,9 +28,25 @@ public record IdentidadDelToken(String usuario, Long usuarioId, Long clienteId, 
         if (!(autenticacion instanceof JwtAuthenticationToken token)) {
             throw Errores.accesoDenegado();
         }
-        Jwt jwt = token.getToken();
+        return de(token.getToken());
+    }
+
+    public static IdentidadDelToken de(Jwt jwt) {
         return new IdentidadDelToken(jwt.getSubject(), numero(jwt.getClaim("usuario_id")),
                 numero(jwt.getClaim("cliente_id")), jwt.getClaimAsString("rol"));
+    }
+
+    public String sujeto() {
+        return usuario;
+    }
+
+    public boolean esDeUsuario() {
+        return usuarioId != null;
+    }
+
+    /** Token client_credentials de otro servicio (cuentas-service al abrir una cuenta): sin usuario ni rol. */
+    public boolean esServicio() {
+        return usuarioId == null && rol == null;
     }
 
     public boolean esEjecutivo() {
@@ -43,9 +59,9 @@ public record IdentidadDelToken(String usuario, Long usuarioId, Long clienteId, 
         }
     }
 
-    /** Un cliente solo ve su propia ficha; un ejecutivo, cualquiera. Ajeno o inexistente responden igual (404). */
+    /** Un cliente solo ve su ficha; un ejecutivo o un servicio, cualquiera. Ajeno o inexistente responden igual (404). */
     public void exigirClienteVisible(long id) {
-        if (!esEjecutivo() && !(CLIENTE.equals(rol) && Objects.equals(clienteId, id))) {
+        if (!esEjecutivo() && !esServicio() && !(CLIENTE.equals(rol) && Objects.equals(clienteId, id))) {
             throw Errores.clienteNoEncontrado();
         }
     }

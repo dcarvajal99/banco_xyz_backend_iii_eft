@@ -10,10 +10,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param canalAutenticacion   usuario y clave Basic de banco-auth, el unico que verifica credenciales aqui
  * @param seguridad            costo de BCrypt para las claves de usuario
  * @param datosDemo            usuarios de demostracion que se crean al sincronizar
+ * @param relevosPermitidos    CN de los BFF que pueden reenviar el token de un usuario
  */
 @ConfigurationProperties(prefix = "banco.clientes")
 public record PropiedadesClientes(String zonaHoraria, boolean sincronizarAlIniciar, CanalAutenticacion canalAutenticacion,
-                                  Seguridad seguridad, DatosDemo datosDemo) {
+                                  Seguridad seguridad, DatosDemo datosDemo, java.util.List<String> relevosPermitidos) {
 
     public record CanalAutenticacion(String usuario, String clave) {
     }

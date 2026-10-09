@@ -55,6 +55,7 @@ public abstract class PruebaDeClientes {
     void reiniciarEsquema() {
         reloj.volverAlPresente();
         jdbc.sql("delete from clientes.outbox").update();
+        jdbc.sql("delete from clientes.notificacion").update();
         jdbc.sql("delete from clientes.usuario").update();
         jdbc.sql("delete from clientes.cliente").update();
         sincronizador.sincronizar();
@@ -82,7 +83,8 @@ public abstract class PruebaDeClientes {
 
     private static RequestPostProcessor token(String usuario, long usuarioId, Long clienteId, String rol, String... scopes) {
         List<String> lista = Arrays.asList(scopes);
-        return jwt().jwt(j -> {
+        RequestPostProcessor certificado = x509(PkiDePrueba.certificado("bff-web"));
+        RequestPostProcessor jwt = jwt().jwt(j -> {
                     j.subject(usuario).claim("usuario_id", usuarioId).claim("rol", rol).claim("scope", lista)
                             .audience(List.of("banco-xyz"));
                     if (clienteId != null) {
@@ -91,6 +93,8 @@ public abstract class PruebaDeClientes {
                 })
                 .authorities(lista.stream().map(s -> new SimpleGrantedAuthority("SCOPE_" + s))
                         .toArray(SimpleGrantedAuthority[]::new));
+        // El BFF que reenvia el token presenta su certificado (mTLS).
+        return solicitud -> certificado.postProcessRequest(jwt.postProcessRequest(solicitud));
     }
 
     protected long usuarioId(String usuario) {
