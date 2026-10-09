@@ -1,4 +1,4 @@
-# Imagen de clientes-service: cuentas del banco y participante de la saga (reserva, acredita, compensa).
+# Imagen de clientes-service: gestion de clientes (informacion personal, perfiles y credenciales).
 # Se construye desde el codigo fuente (multi-etapa): la imagen final trae solo un JRE y la aplicacion, sin Maven ni el
 # codigo. Construccion aislada: docker build -t banco-xyz/clientes-service:1.0.0 clientes-service/  (o desde el docker-compose.yaml).
 
@@ -15,7 +15,7 @@ RUN mvn -B -q -ntp package -DskipTests \
 
 FROM eclipse-temurin:21-jre-alpine
 LABEL org.opencontainers.image.title="clientes-service" \
-      org.opencontainers.image.description="Banco XYZ - cuentas del banco y participante de la saga (reserva, acredita, compensa)" \
+      org.opencontainers.image.description="Banco XYZ - gestion de clientes: informacion personal, perfiles y credenciales" \
       org.opencontainers.image.version="1.0.0"
 # Usuario sin privilegios con uid fijo: el volumen de certificados se entrega legible solo para el.
 RUN addgroup -S -g 10001 banco && adduser -S -D -H -u 10001 -G banco banco
@@ -25,13 +25,13 @@ COPY --from=construccion /fuente/capas/spring-boot-loader/ ./
 COPY --from=construccion /fuente/capas/snapshot-dependencies/ ./
 COPY --from=construccion /fuente/capas/application/ ./
 USER banco
-# Negocio por HTTPS en 8080; operacion (health, circuitos, metricas) por HTTP en 9080.
-EXPOSE 8080 9080
+# Negocio por HTTPS en 8101; operacion (health, circuitos, metricas) por HTTP en 9101 (puertos del Config Server).
+EXPOSE 8101 9101
 # La JVM usa para el heap el 60 % de la memoria del contenedor (no de la maquina); el resto queda para metaspace, hilos y
 # buffers de red. Termina si se queda sin memoria, para que Docker la reinicie en vez de dejarla viva pero degradada. Perfil tls,nube: HTTPS y la configuracion del entorno en contenedores.
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=60 -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError" \
     SPRING_PROFILES_ACTIVE=tls,nube \
     BANCO_CERTIFICADOS=/certificados
 HEALTHCHECK --interval=10s --timeout=3s --start-period=120s --retries=6 \
-  CMD wget -qO- http://127.0.0.1:9080/actuator/health | grep -q '"status":"UP"' || exit 1
+  CMD wget -qO- http://127.0.0.1:9101/actuator/health | grep -q '"status":"UP"' || exit 1
 ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

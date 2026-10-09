@@ -10,9 +10,9 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/** Usuario de los canales web y movil. Los cajeros autentican tarjetas, no usuarios. */
+/** Credenciales de un cliente o de un ejecutivo. Los cajeros autentican tarjetas (cuentas-service), no usuarios. */
 @Entity
-@Table(schema = "core", name = "usuario")
+@Table(schema = "clientes", name = "usuario")
 public class Usuario {
 
     public static final String ROL_CLIENTE = "CLIENTE";

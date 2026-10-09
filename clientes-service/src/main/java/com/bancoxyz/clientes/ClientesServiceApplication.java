@@ -5,13 +5,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
- * Backend principal del Banco XYZ.
+ * Gestion de Clientes del Banco XYZ: informacion personal, perfiles y credenciales.
  *
- * <p>Es el unico duenno de los datos y de las reglas que deben cumplirse sin importar el canal:
- * no sobregirar, limite diario por tarjeta, bloqueo por PIN. No sabe nada de pantallas: entrega
- * datos completos y neutros, y cada BFF (web, movil, cajero) los adapta a su frontend.</p>
- *
- * <p>Lo llaman solo los tres BFF, cada uno con su propia credencial de servicio.</p>
+ * <p>Es dueno del esquema {@code clientes}. Los BFF web y movil lo llaman con el token del usuario (token relay);
+ * banco-auth verifica aqui las claves de usuario. Publica alertas de seguridad (usuario bloqueado) en Kafka.</p>
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan

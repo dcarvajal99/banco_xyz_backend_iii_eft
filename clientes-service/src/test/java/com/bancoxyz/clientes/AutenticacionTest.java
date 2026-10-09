@@ -1,123 +1,134 @@
 package com.bancoxyz.clientes;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
-import com.bancoxyz.clientes.autenticacion.ServicioDeAutenticacion;
-import com.bancoxyz.clientes.autenticacion.ServicioDeAutenticacion.EstadoTarjeta;
-import com.bancoxyz.clientes.autenticacion.ServicioDeAutenticacion.EstadoUsuario;
-import com.bancoxyz.clientes.seguridad.Canal;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
-class AutenticacionTest extends PruebaDelCore {
+/** Verificacion de credenciales para banco-auth: clave de servicio + certificado, bloqueo y alerta de seguridad. */
+class AutenticacionTest extends PruebaDeClientes {
 
-    @Autowired
-    private ServicioDeAutenticacion autenticacion;
-
-    @Test
-    @DisplayName("20 intentos simultaneos con clave erronea: el contador llega a 5 y bloquea (4 x 401 y 16 x 423)")
-    void bloqueoDeUsuarioSinCarreras() throws Exception {
-        ExecutorService pool = Executors.newFixedThreadPool(20);
-        CountDownLatch largada = new CountDownLatch(1);
-        List<Future<EstadoUsuario>> futuros = new ArrayList<>();
-        for (int i = 0; i < 20; i++) {
-            futuros.add(pool.submit(() -> {
-                largada.await();
-                return autenticacion.autenticarUsuario(Canal.WEB, "jane.smith", "incorrecta").estado();
-            }));
-        }
-        largada.countDown();
-        List<EstadoUsuario> estados = new ArrayList<>();
-        for (Future<EstadoUsuario> f : futuros) {
-            estados.add(f.get(30, TimeUnit.SECONDS));
-        }
-        pool.shutdownNow();
-
-        Map<EstadoUsuario, Long> conteo = estados.stream().collect(Collectors.groupingBy(e -> e, Collectors.counting()));
-        assertThat(conteo).containsEntry(EstadoUsuario.CREDENCIALES_INVALIDAS, 4L).containsEntry(EstadoUsuario.BLOQUEADO, 16L);
-        assertThat(jdbc.sql("select intentos_fallidos from core.usuario where usuario = 'jane.smith'")
-                .query(Integer.class).single()).isEqualTo(5);
-        // Con el bloqueo vigente, ni la clave correcta entra.
-        assertThat(autenticacion.autenticarUsuario(Canal.WEB, "jane.smith", "Cliente2026!").estado())
-                .isEqualTo(EstadoUsuario.BLOQUEADO);
+    private ResultActions autenticar(String usuario, String clave, RequestPostProcessor credencial) throws Exception {
+        return mvc.perform(post("/api/v1/autenticacion/usuarios").with(credencial).contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("usuario", usuario, "password", clave))));
     }
 
     @Test
-    @DisplayName("Un bloqueo vencido se libera antes de evaluar la clave")
-    void bloqueoVencidoSeLibera() {
-        reloj.fijar(LocalDateTime.of(2026, 9, 12, 10, 0));
+    @DisplayName("Un cliente migrado ingresa con su clave: banco-auth recibe su usuario, su cliente (id de la migracion) y su rol")
+    void clienteAutenticado() throws Exception {
+        autenticar("diana.prince", "Cliente2026!", bancoAuth()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.usuario").value("diana.prince"))
+                .andExpect(jsonPath("$.clienteId").value(DIANA))
+                .andExpect(jsonPath("$.nombre").value("Diana Prince"))
+                .andExpect(jsonPath("$.rol").value("CLIENTE"));
+    }
+
+    @Test
+    @DisplayName("El ejecutivo tambien se verifica aqui; que aplicacion admite su rol lo decide banco-auth")
+    void ejecutivoAutenticado() throws Exception {
+        autenticar("ejecutivo", "Ejecutivo2026!", bancoAuth()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.rol").value("EJECUTIVO"))
+                .andExpect(jsonPath("$.clienteId").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Clave incorrecta: 401 CREDENCIALES_INVALIDAS con el ProblemDetail comun")
+    void claveIncorrecta() throws Exception {
+        autenticar("diana.prince", "otra-clave", bancoAuth()).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.type").value("urn:bancoxyz:problema:credenciales-invalidas"))
+                .andExpect(jsonPath("$.codigo").value("CREDENCIALES_INVALIDAS"))
+                .andExpect(jsonPath("$.instance").value("/api/v1/autenticacion/usuarios"))
+                .andExpect(jsonPath("$.correlacionId").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("Quinto intento fallido: 423 USUARIO_BLOQUEADO y una alerta UsuarioBloqueado en el outbox, en la misma transaccion")
+    void bloqueoConAlerta() throws Exception {
+        for (int i = 0; i < 4; i++) {
+            autenticar("diana.prince", "mala-" + i, bancoAuth()).andExpect(status().isUnauthorized());
+        }
+        autenticar("diana.prince", "mala-4", bancoAuth()).andExpect(status().isLocked())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_BLOQUEADO"));
+        // Bloqueado, ni la clave correcta entra.
+        autenticar("diana.prince", "Cliente2026!", bancoAuth()).andExpect(status().isLocked());
+
+        var alertas = jdbc.sql("select topico, clave, tipo, payload from clientes.outbox").query().listOfRows();
+        assertThat(alertas).hasSize(1);
+        assertThat(alertas.get(0)).containsEntry("topico", "seguridad.alertas").containsEntry("tipo", "UsuarioBloqueado")
+                .containsEntry("clave", String.valueOf(DIANA));
+        JsonNode alerta = json.readTree((String) alertas.get(0).get("payload"));
+        assertThat(alerta.get("version").asInt()).isEqualTo(1);
+        assertThat(alerta.get("clienteId").asLong()).isEqualTo(DIANA);
+        assertThat(alerta.get("severidad").asText()).isEqualTo("ALTA");
+        assertThat(alerta.get("referencia").asText()).isEqualTo("diana.prince");
+    }
+
+    @Test
+    @DisplayName("Pasados los 15 minutos el bloqueo vence y la clave correcta vuelve a entrar")
+    void bloqueoVence() throws Exception {
         for (int i = 0; i < 5; i++) {
-            autenticacion.autenticarUsuario(Canal.WEB, "diana.prince", "incorrecta");
+            autenticar("steve.rogers", "mala-" + i, bancoAuth());
         }
-        assertThat(autenticacion.autenticarUsuario(Canal.WEB, "diana.prince", "Cliente2026!").estado())
-                .isEqualTo(EstadoUsuario.BLOQUEADO);
-        reloj.fijar(LocalDateTime.of(2026, 9, 12, 10, 16));
-        assertThat(autenticacion.autenticarUsuario(Canal.WEB, "diana.prince", "Cliente2026!").estado())
-                .isEqualTo(EstadoUsuario.AUTENTICADO);
+        reloj.fijar(LocalDateTime.now(reloj).plusMinutes(16));
+        autenticar("steve.rogers", "Cliente2026!", bancoAuth()).andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("Tres PIN incorrectos bloquean la tarjeta y despues ni el PIN correcto entra")
-    void bloqueoDeTarjeta() {
-        String pan = "4000000000001018";
-        var primero = autenticacion.autenticarTarjeta(pan, "0000");
-        var segundo = autenticacion.autenticarTarjeta(pan, "0000");
-        assertThat(primero.estado()).isEqualTo(EstadoTarjeta.PIN_INCORRECTO);
-        assertThat(primero.intentosRestantes()).isEqualTo(2);
-        assertThat(segundo.intentosRestantes()).isEqualTo(1);
-        assertThat(autenticacion.autenticarTarjeta(pan, "0000").estado()).isEqualTo(EstadoTarjeta.BLOQUEADA);
-        assertThat(autenticacion.autenticarTarjeta(pan, "1234").estado()).isEqualTo(EstadoTarjeta.BLOQUEADA);
+    @DisplayName("Identificar sin clave (GitHub): solo clientes activos; el ejecutivo y el inexistente se rechazan")
+    void identificar() throws Exception {
+        mvc.perform(get("/api/v1/autenticacion/usuarios/alice.brown").with(bancoAuth())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.clienteId").value(ALICE));
+        mvc.perform(get("/api/v1/autenticacion/usuarios/ejecutivo").with(bancoAuth())).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ROL_NO_PERMITIDO"));
+        mvc.perform(get("/api/v1/autenticacion/usuarios/nadie").with(bancoAuth())).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("USUARIO_NO_ENCONTRADO"));
     }
 
     @Test
-    @DisplayName("Traduccion HTTP: credenciales invalidas, usuario inexistente, ejecutivo por movil, tarjeta invalida y bloqueada")
-    void erroresHttp() throws Exception {
-        mvc.perform(post("/api/v1/autenticacion/usuarios").with(canal("web")).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"usuario\":\"diana.prince\",\"password\":\"mala\"}"))
-                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.codigo").value("CREDENCIALES_INVALIDAS"));
-        mvc.perform(post("/api/v1/autenticacion/usuarios").with(canal("movil")).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"usuario\":\"no.existe\",\"password\":\"x\"}"))
-                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.codigo").value("CREDENCIALES_INVALIDAS"));
-        mvc.perform(post("/api/v1/autenticacion/usuarios").with(canal("movil")).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"usuario\":\"ejecutivo\",\"password\":\"Ejecutivo2026!\"}"))
-                .andExpect(status().isForbidden()).andExpect(jsonPath("$.codigo").value("ROL_NO_PERMITIDO_EN_CANAL"));
-        mvc.perform(post("/api/v1/autenticacion/usuarios").with(canal("web")).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"usuario\":\"ejecutivo\",\"password\":\"Ejecutivo2026!\"}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.rol").value("EJECUTIVO"))
-                .andExpect(jsonPath("$.clienteId").isEmpty());
-        mvc.perform(post("/api/v1/autenticacion/usuarios").with(canal("web")).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"usuario\":\"\",\"password\":\"\"}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.codigo").value("SOLICITUD_INVALIDA"));
-        mvc.perform(post("/api/v1/autenticacion/tarjetas").with(canal("cajero")).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"numeroTarjeta\":\"4111111111111111\",\"pin\":\"1234\"}"))
-                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.codigo").value("TARJETA_INVALIDA"));
-        for (int i = 0; i < 3; i++) {
-            autenticacion.autenticarTarjeta("4000000000001018", "0000");
-        }
-        mvc.perform(post("/api/v1/autenticacion/tarjetas").with(canal("cajero")).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"numeroTarjeta\":\"4000000000001018\",\"pin\":\"1234\"}"))
-                .andExpect(status().isLocked()).andExpect(jsonPath("$.codigo").value("TARJETA_BLOQUEADA"));
-        for (int i = 0; i < 5; i++) {
-            autenticacion.autenticarUsuario(Canal.WEB, "jane.smith", "incorrecta");
-        }
-        mvc.perform(post("/api/v1/autenticacion/usuarios").with(canal("web")).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"usuario\":\"jane.smith\",\"password\":\"Cliente2026!\"}"))
-                .andExpect(status().isLocked()).andExpect(jsonPath("$.codigo").value("USUARIO_BLOQUEADO"));
+    @DisplayName("Sin certificado de cliente: 401 CERTIFICADO_REQUERIDO aunque la clave de servicio sea correcta")
+    void sinCertificado() throws Exception {
+        autenticar("diana.prince", "Cliente2026!", org.springframework.security.test.web.servlet.request
+                .SecurityMockMvcRequestPostProcessors.httpBasic("banco-auth", "autenticacion-secreto-dev"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.codigo").value("CERTIFICADO_REQUERIDO"));
+    }
+
+    @Test
+    @DisplayName("Clave de banco-auth con el certificado de otro servicio: 403 CERTIFICADO_NO_CORRESPONDE")
+    void certificadoDeOtro() throws Exception {
+        autenticar("diana.prince", "Cliente2026!", servicio("banco-auth", "autenticacion-secreto-dev", "bff-web"))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.codigo").value("CERTIFICADO_NO_CORRESPONDE"));
+    }
+
+    @Test
+    @DisplayName("Clave de servicio incorrecta o un token de usuario en esta puerta: 401 NO_AUTENTICADO")
+    void credencialEquivocada() throws Exception {
+        autenticar("diana.prince", "Cliente2026!", servicio("banco-auth", "otra", "banco-auth"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+        // Un access token, aunque venga con el certificado de banco-auth, no abre esta puerta: aqui solo vale la clave.
+        RequestPostProcessor certificado = org.springframework.security.test.web.servlet.request
+                .SecurityMockMvcRequestPostProcessors.x509(PkiDePrueba.certificado("banco-auth"));
+        autenticar("diana.prince", "Cliente2026!", s -> {
+            s.addHeader("Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.firma");
+            return certificado.postProcessRequest(s);
+        }).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
+    @DisplayName("Cuerpo invalido: 400 con el campo que fallo")
+    void cuerpoInvalido() throws Exception {
+        autenticar("", "x", bancoAuth()).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("SOLICITUD_INVALIDA"))
+                .andExpect(jsonPath("$.errores[0].campo").value("usuario"));
     }
 }

@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-import com.bancoxyz.clientes.seguridad.FiltroCertificadoDeCanal;
+import com.bancoxyz.clientes.seguridad.FiltroCertificadoDeServicio;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,8 +18,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Id de correlacion leido o generado aqui, con una linea de log por solicitud (incluye el CN del certificado de cliente
- * con que entro el BFF: el mTLS de cada canal queda en el log).
+ * Id de correlacion leido o generado aqui, con una linea de log por solicitud (incluye el CN del certificado de cliente,
+ * si la conexion lo trajo: el mTLS de banco-auth queda en el log).
  *
  * <p>Va antes que la cadena de seguridad para que tambien los 401/403 lleven el id. Con el mismo id en el log del BFF y
  * en el del core se sigue una solicitud de punta a punta. El valor recibido se valida con un patron estricto porque se
@@ -47,7 +47,7 @@ public class FiltroCorrelacion extends OncePerRequestFilter {
         } finally {
             if (!request.getRequestURI().startsWith("/actuator")) {
                 log.info("{} {} -> {} ({} ms) certificado={}", request.getMethod(), request.getRequestURI(), response.getStatus(),
-                        (System.nanoTime() - inicio) / 1_000_000, FiltroCertificadoDeCanal.nombreComun(request).orElse("ninguno"));
+                        (System.nanoTime() - inicio) / 1_000_000, FiltroCertificadoDeServicio.nombreComun(request).orElse("ninguno"));
             }
             MDC.remove(CLAVE_MDC);
         }

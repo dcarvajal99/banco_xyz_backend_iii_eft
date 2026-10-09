@@ -14,16 +14,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class ConfiguracionGeneral {
 
-    /**
-     * Un unico reloj con la zona del banco.
-     *
-     * <p>El limite diario de retiro depende de cuando empieza "hoy". Si cada clase llamara a
-     * {@code LocalDateTime.now()} sin zona, en un servidor con TZ=UTC un retiro de las 22:00 en
-     * Santiago quedaria guardado al dia siguiente y contaria dos veces. Todas las marcas de tiempo
-     * salen de este reloj, y las pruebas lo reemplazan por uno fijo.</p>
-     */
+    /** Un unico reloj con la zona del banco: las pruebas lo reemplazan por uno ajustable (bloqueos que vencen). */
     @Bean
-    public Clock reloj(PropiedadesCore propiedades) {
+    public Clock reloj(PropiedadesClientes propiedades) {
         return Clock.system(ZoneId.of(propiedades.zonaHoraria()));
     }
 
@@ -31,15 +24,16 @@ public class ConfiguracionGeneral {
     public OpenAPI contratoOpenApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Banco XYZ - Core API")
+                        .title("Banco XYZ - clientes-service")
                         .version("1.0.0")
-                        .description("Backend principal, agnostico del canal. Entrega datos completos y aplica las "
-                                + "reglas de negocio comunes. Solo lo consumen los BFF web, movil y cajero, cada uno "
-                                + "con su credencial de servicio (HTTP Basic) y propagando la identidad del usuario "
-                                + "final en X-Usuario-Id o X-Tarjeta-Id/X-Terminal-Id."))
-                .components(new Components().addSecuritySchemes("credencialDeCanal",
-                        new SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("basic")
-                                .description("bff-web, bff-movil o bff-cajero")))
-                .addSecurityItem(new SecurityRequirement().addList("credencialDeCanal"));
+                        .description("Gestion de clientes: informacion personal, perfiles y credenciales. Los BFF llaman "
+                                + "con el access token del usuario emitido por banco-auth (scopes clientes.*); banco-auth "
+                                + "verifica credenciales en /api/v1/autenticacion con su clave de servicio y su certificado."))
+                .components(new Components()
+                        .addSecuritySchemes("tokenDeUsuario", new SecurityScheme().type(SecurityScheme.Type.HTTP)
+                                .scheme("bearer").bearerFormat("JWT").description("Access token de banco-auth"))
+                        .addSecuritySchemes("servicioDeAutenticacion", new SecurityScheme().type(SecurityScheme.Type.HTTP)
+                                .scheme("basic").description("banco-auth (mas su certificado de cliente)")))
+                .addSecurityItem(new SecurityRequirement().addList("tokenDeUsuario"));
     }
 }

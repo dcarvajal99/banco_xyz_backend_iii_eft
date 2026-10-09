@@ -1,15 +1,14 @@
 package com.bancoxyz.clientes.error;
 
 import java.net.URI;
+import java.util.Map;
 
-import jakarta.persistence.LockTimeoutException;
-import jakarta.persistence.PessimisticLockException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -17,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -48,32 +48,36 @@ public class ManejadorDeErrores extends ResponseEntityExceptionHandler {
     }
 
     /**
-     * La unica restriccion de unicidad que una solicitud puede violar es
-     * {@code unique(canal, clave_idempotencia)} de los retiros.
-     *
-     * <p>No se captura dentro del servicio: en PostgreSQL la transaccion queda abortada tras la
-     * violacion, asi que ya no se puede releer ni confirmar nada. Se deja revertir completa (sin
-     * descuento) y se responde aqui. Como el servicio bloquea la cuenta antes de mirar la clave, dos
-     * reintentos sobre la MISMA cuenta nunca llegan a esta restriccion: si salta, la clave se reuso
-     * para otra cuenta, y eso es un conflicto.</p>
+     * Unicidad (nombre de cliente o de usuario) que dos altas simultaneas alcanzaron a violar en la base: la validacion
+     * previa del servicio no ve la fila que la otra transaccion aun no confirma.
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Object> integridad(DataIntegrityViolationException ex, HttpServletRequest request) {
-        log.warn("Violacion de integridad traducida a IDEMPOTENCIA_CONFLICTO: {}", ex.getMostSpecificCause().getMessage());
-        return negocio(Errores.idempotenciaConflicto(), request);
+        log.warn("Violacion de integridad traducida a CLIENTE_YA_EXISTE: {}", ex.getMostSpecificCause().getMessage());
+        return negocio(Errores.clienteYaExiste(), request);
     }
 
-    /** El bloqueo de la cuenta no se obtuvo dentro del lock_timeout: no se desconto nada. */
-    @ExceptionHandler({PessimisticLockingFailureException.class, LockTimeoutException.class,
-            PessimisticLockException.class})
-    public ResponseEntity<Object> bloqueo(RuntimeException ex, HttpServletRequest request) {
-        log.warn("No se obtuvo el bloqueo de la cuenta a tiempo: {}", ex.getMessage());
-        return negocio(Errores.cuentaOcupada(), request);
+    /** Version optimista del perfil: otra edicion se confirmo primero. */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<Object> versionDistinta(ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
+        return negocio(Errores.perfilModificado(), request);
     }
 
     @ExceptionHandler({MethodArgumentTypeMismatchException.class, ConstraintViolationException.class})
     public ResponseEntity<Object> parametroInvalido(RuntimeException ex, HttpServletRequest request) {
         return negocio(Errores.solicitudInvalida("Parametro invalido"), request);
+    }
+
+    /** Validacion del DTO de entrada: ademas del codigo, que campo fallo y por que, para que el BFF lo muestre. */
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex, HttpHeaders headers,
+                                                                  HttpStatusCode status, WebRequest request) {
+        ProblemDetail problema = Problemas.crear(HttpStatus.BAD_REQUEST, "SOLICITUD_INVALIDA", "Solicitud invalida",
+                "Uno o mas campos no son validos", ((ServletWebRequest) request).getRequest().getRequestURI());
+        problema.setProperty("errores", ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> Map.of("campo", e.getField(), "mensaje", String.valueOf(e.getDefaultMessage())))
+                .toList());
+        return responder(problema);
     }
 
     @ExceptionHandler(Exception.class)
