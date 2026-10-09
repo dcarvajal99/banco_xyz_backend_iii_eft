@@ -1,9 +1,9 @@
-package com.bancoxyz.auth.core;
+package com.bancoxyz.auth.clientes;
 
 /** El core no respondio o el circuito esta abierto: sin el core no se puede verificar una clave, no se emite token. */
-public class CoreNoDisponible extends RuntimeException {
+public class ClientesNoDisponible extends RuntimeException {
 
-    public CoreNoDisponible(Throwable causa) {
+    public ClientesNoDisponible(Throwable causa) {
         super("El core no esta disponible para verificar la clave", causa);
     }
 }

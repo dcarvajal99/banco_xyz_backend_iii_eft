@@ -32,7 +32,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Las anotaciones @Retry y @CircuitBreaker de ClienteCore actuando en el login: un corte de conexion se reintenta, el
+ * Las anotaciones @Retry y @CircuitBreaker de ClienteDeClientes actuando en el login: un corte de conexion se reintenta, el
  * circuito abre con el core caido y el formulario avisa que el servicio no esta disponible sin llamar al core; una
  * clave incorrecta no abre el circuito.
  */
@@ -40,7 +40,7 @@ import org.springframework.test.web.servlet.ResultActions;
 @ActiveProfiles("prueba")
 @AutoConfigureMockMvc
 @AutoConfigureMockRestServiceServer
-class CircuitoDelCoreTest extends PruebaOAuth {
+class CircuitoDeClientesTest extends PruebaOAuth {
 
     @Autowired
     private MockRestServiceServer core;
@@ -110,7 +110,7 @@ class CircuitoDelCoreTest extends PruebaOAuth {
     @Test
     @DisplayName("Bulkhead lleno: el login responde servicio no disponible sin llamar al core ni abrir el circuito")
     void bulkheadLleno() throws Exception {
-        Bulkhead bulkhead = bulkheads.bulkhead("core");
+        Bulkhead bulkhead = bulkheads.bulkhead("clientes");
         int ocupadas = 0;
         while (bulkhead.tryAcquirePermission()) {
             ocupadas++;
@@ -131,6 +131,6 @@ class CircuitoDelCoreTest extends PruebaOAuth {
     }
 
     private CircuitBreaker circuito() {
-        return circuitos.circuitBreaker("core");
+        return circuitos.circuitBreaker("clientes");
     }
 }

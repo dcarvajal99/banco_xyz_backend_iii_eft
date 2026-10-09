@@ -34,7 +34,7 @@ class RotacionDeClavesTest {
         }
     };
     private final AlmacenDeClaves almacen = new AlmacenDeClaves(
-            new PropiedadesAuth("https://localhost:8081", "banco-xyz", Duration.ofMinutes(5), Duration.ofMinutes(60), null, null, null),
+            new PropiedadesAuth("https://localhost:8081", "banco-xyz", Duration.ofMinutes(5), Duration.ofMinutes(60), null, null, null, null, null, null),
             reloj);
 
     @Test

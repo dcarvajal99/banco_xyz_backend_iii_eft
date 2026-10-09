@@ -9,12 +9,12 @@ import org.springframework.context.annotation.Scope;
 import org.springframework.web.client.RestClient;
 
 /**
- * Con {@code banco.core.descubrimiento=true} (lo activa el Config Server) el core se busca por nombre en Eureka en cada
+ * Con {@code banco.clientes.descubrimiento=true} (lo activa el Config Server) el core se busca por nombre en Eureka en cada
  * llamada. El builder se arma con el configurador de Spring Boot: conserva el certificado de cliente y los timeouts.
  */
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnProperty(name = "banco.core.descubrimiento", havingValue = "true")
-public class DescubrimientoDelCore {
+@ConditionalOnProperty(name = "banco.clientes.descubrimiento", havingValue = "true")
+public class Descubrimiento {
 
     @Bean
     @LoadBalanced

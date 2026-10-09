@@ -1,6 +1,8 @@
 package com.bancoxyz.auth.oauth;
 
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 import com.bancoxyz.auth.claves.AlmacenDeClaves;
 import com.bancoxyz.auth.config.PropiedadesAuth;
@@ -59,7 +61,8 @@ public class ServidorDeAutorizacion {
     public SecurityFilterChain cadenaDelProtocolo(HttpSecurity http) throws Exception {
         OAuth2AuthorizationServerConfigurer servidor = OAuth2AuthorizationServerConfigurer.authorizationServer();
         http.securityMatcher(servidor.getEndpointsMatcher())
-                .with(servidor, s -> s.oidc(Customizer.withDefaults()))
+                .with(servidor, s -> s.oidc(Customizer.withDefaults())
+                        .authorizationEndpoint(a -> a.authenticationProviders(RolPorCanal::aplicar)))
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated())
                 .exceptionHandling(e -> e.defaultAuthenticationEntryPointFor(new LoginUrlAuthenticationEntryPoint("/login"),
                         new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
@@ -158,10 +161,20 @@ public class ServidorDeAutorizacion {
             Object principal = contexto.getPrincipal().getPrincipal();
             UsuarioDelBanco usuario = principal instanceof UsuarioGitHub github ? github.banco()
                     : principal instanceof UsuarioDelBanco delBanco ? delBanco : null;
+            if (accessToken && usuario != null) {
+                // Minimo privilegio por rol: un cliente no recibe scopes de administracion y un ejecutivo no paga.
+                Set<String> quitar = "EJECUTIVO".equals(usuario.rol()) ? Alcances.DE_CLIENTE : Alcances.DE_EJECUTIVO;
+                Set<String> scopes = new TreeSet<>(contexto.getAuthorizedScopes());
+                scopes.removeAll(quitar);
+                contexto.getClaims().claim("scope", scopes);
+            }
             if ((accessToken || idToken) && usuario != null) {
+                // Un ejecutivo no es cliente: su token no lleva cliente_id.
+                if (usuario.clienteId() != null) {
+                    contexto.getClaims().claim("cliente_id", usuario.clienteId());
+                }
                 contexto.getClaims()
                         .claim("usuario_id", usuario.usuarioId())
-                        .claim("cliente_id", usuario.clienteId())
                         .claim("rol", usuario.rol())
                         .claim("origen", principal instanceof UsuarioGitHub ? "github" : "banco");
                 if (principal instanceof UsuarioGitHub github) {

@@ -46,7 +46,7 @@ class FlujosOAuthTest extends PruebaOAuth {
     @DisplayName("authorization_code + PKCE: codigo, canje con code_verifier, access token RS256 con claims del usuario")
     void codigoDeAutorizacionConPkce() throws Exception {
         String verificador = verificador();
-        String redireccion = autorizar("openid transferencias.escribir transferencias.leer", desafio(verificador))
+        String redireccion = autorizar("openid pagos.escribir pagos.leer", desafio(verificador))
                 .andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();
         assertThat(redireccion).startsWith(REDIRECCION);
         assertThat(parametro(redireccion, "state")).isEqualTo("estado-1");
@@ -66,17 +66,17 @@ class FlujosOAuthTest extends PruebaOAuth {
                 .containsEntry("cliente_id", 1L).containsEntry("rol", "CLIENTE").containsEntry("iss", "https://localhost:8081");
         assertThat(acceso.getJWTClaimsSet().getAudience()).containsExactly("banco-xyz");
         assertThat(acceso.getJWTClaimsSet().getStringListClaim("scope"))
-                .containsExactlyInAnyOrder("openid", "transferencias.escribir", "transferencias.leer");
+                .containsExactlyInAnyOrder("openid", "pagos.escribir", "pagos.leer");
     }
 
     @Test
     @DisplayName("PKCE obligatorio: sin code_challenge no hay codigo, y un codigo sin code_verifier no se canjea")
     void pkceObligatorio() throws Exception {
-        String sinDesafio = autorizar("transferencias.leer", null).andExpect(status().is3xxRedirection())
+        String sinDesafio = autorizar("pagos.leer", null).andExpect(status().is3xxRedirection())
                 .andReturn().getResponse().getRedirectedUrl();
         assertThat(parametro(sinDesafio, "error")).isEqualTo("invalid_request");
 
-        String redireccion = autorizar("transferencias.leer", desafio(verificador())).andReturn().getResponse().getRedirectedUrl();
+        String redireccion = autorizar("pagos.leer", desafio(verificador())).andReturn().getResponse().getRedirectedUrl();
         canjear(parametro(redireccion, "code"), null).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("invalid_grant"));
         canjear(parametro(redireccion, "code"), verificador()).andExpect(status().isBadRequest())
@@ -84,9 +84,9 @@ class FlujosOAuthTest extends PruebaOAuth {
     }
 
     @Test
-    @DisplayName("banca-web no puede pedir el scope del core: un usuario nunca recibe core.cuentas.leer")
+    @DisplayName("bff-web no puede pedir el scope del cajero: un usuario nunca recibe cajero.operar")
     void scopeAjenoAlCliente() throws Exception {
-        String redireccion = autorizar("core.cuentas.leer", desafio(verificador())).andReturn().getResponse().getRedirectedUrl();
+        String redireccion = autorizar("cajero.operar", desafio(verificador())).andReturn().getResponse().getRedirectedUrl();
         assertThat(parametro(redireccion, "error")).isEqualTo("invalid_scope");
     }
 
@@ -94,29 +94,29 @@ class FlujosOAuthTest extends PruebaOAuth {
     @DisplayName("Refresh token rotativo: entrega tokens nuevos y el refresh token usado deja de valer")
     void refrescoRotativo() throws Exception {
         String verificador = verificador();
-        String redireccion = autorizar("transferencias.leer", desafio(verificador)).andReturn().getResponse().getRedirectedUrl();
+        String redireccion = autorizar("pagos.leer", desafio(verificador)).andReturn().getResponse().getRedirectedUrl();
         JsonNode primeros = cuerpo(canjear(parametro(redireccion, "code"), verificador));
         String refresco = primeros.get("refresh_token").asText();
 
-        JsonNode segundos = cuerpo(mvc.perform(post("/oauth2/token").with(httpBasic("banca-web", SECRETO_WEB))
+        JsonNode segundos = cuerpo(mvc.perform(post("/oauth2/token").with(httpBasic("bff-web", SECRETO_WEB))
                 .param("grant_type", "refresh_token").param("refresh_token", refresco)).andExpect(status().isOk()));
         assertThat(segundos.get("refresh_token").asText()).isNotEqualTo(refresco);
         assertThat(SignedJWT.parse(segundos.get("access_token").asText()).getJWTClaimsSet().getClaim("usuario_id")).isEqualTo(1L);
 
-        mvc.perform(post("/oauth2/token").with(httpBasic("banca-web", SECRETO_WEB))
+        mvc.perform(post("/oauth2/token").with(httpBasic("bff-web", SECRETO_WEB))
                         .param("grant_type", "refresh_token").param("refresh_token", refresco))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("invalid_grant"));
     }
 
     @Test
-    @DisplayName("client_credentials: token de servicio con scope core.cuentas.leer, sin datos de usuario")
+    @DisplayName("client_credentials: token de servicio con scope cuentas.leer, sin datos de usuario")
     void credencialesDeCliente() throws Exception {
-        JsonNode token = cuerpo(mvc.perform(post("/oauth2/token").with(httpBasic("transferencias-service", SECRETO_TRANSFERENCIAS))
-                .param("grant_type", "client_credentials").param("scope", "core.cuentas.leer")).andExpect(status().isOk()));
+        JsonNode token = cuerpo(mvc.perform(post("/oauth2/token").with(httpBasic("pagos-service", SECRETO_TRANSFERENCIAS))
+                .param("grant_type", "client_credentials").param("scope", "cuentas.leer")).andExpect(status().isOk()));
 
         SignedJWT jwt = SignedJWT.parse(token.get("access_token").asText());
-        assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("transferencias-service");
-        assertThat(jwt.getJWTClaimsSet().getStringListClaim("scope")).containsExactly("core.cuentas.leer");
+        assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo("pagos-service");
+        assertThat(jwt.getJWTClaimsSet().getStringListClaim("scope")).containsExactly("cuentas.leer");
         assertThat(jwt.getJWTClaimsSet().getClaims()).doesNotContainKeys("usuario_id", "cliente_id");
         assertThat(token.has("refresh_token")).isFalse();
     }
@@ -124,11 +124,11 @@ class FlujosOAuthTest extends PruebaOAuth {
     @Test
     @DisplayName("client_credentials con secreto incorrecto (401) o con un scope no permitido (400)")
     void credencialesInvalidas() throws Exception {
-        mvc.perform(post("/oauth2/token").with(httpBasic("transferencias-service", "otro-secreto"))
-                        .param("grant_type", "client_credentials").param("scope", "core.cuentas.leer"))
+        mvc.perform(post("/oauth2/token").with(httpBasic("pagos-service", "otro-secreto"))
+                        .param("grant_type", "client_credentials").param("scope", "cuentas.leer"))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.error").value("invalid_client"));
-        mvc.perform(post("/oauth2/token").with(httpBasic("transferencias-service", SECRETO_TRANSFERENCIAS))
-                        .param("grant_type", "client_credentials").param("scope", "transferencias.escribir"))
+        mvc.perform(post("/oauth2/token").with(httpBasic("pagos-service", SECRETO_TRANSFERENCIAS))
+                        .param("grant_type", "client_credentials").param("scope", "pagos.escribir"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("invalid_scope"));
     }
 
@@ -138,8 +138,8 @@ class FlujosOAuthTest extends PruebaOAuth {
         String anterior = almacen.activa().kid();
         String nueva = almacen.rotar().kid();
 
-        JsonNode token = cuerpo(mvc.perform(post("/oauth2/token").with(httpBasic("transferencias-service", SECRETO_TRANSFERENCIAS))
-                .param("grant_type", "client_credentials").param("scope", "core.cuentas.leer")));
+        JsonNode token = cuerpo(mvc.perform(post("/oauth2/token").with(httpBasic("pagos-service", SECRETO_TRANSFERENCIAS))
+                .param("grant_type", "client_credentials").param("scope", "cuentas.leer")));
         assertThat(SignedJWT.parse(token.get("access_token").asText()).getHeader().getKeyID()).isEqualTo(nueva);
         mvc.perform(get("/oauth2/jwks")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.keys.length()").value(2))

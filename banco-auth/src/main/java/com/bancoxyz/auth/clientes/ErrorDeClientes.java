@@ -1,15 +1,15 @@
-package com.bancoxyz.auth.core;
+package com.bancoxyz.auth.clientes;
 
 /**
  * Respuesta 4xx del core (clave incorrecta, usuario bloqueado, rol no permitido). Es una respuesta valida: no abre el
  * circuito ni se reintenta; el formulario de login la muestra como credenciales invalidas, usuario bloqueado o no habilitado.
  */
-public class ErrorDeNegocioDelCore extends RuntimeException {
+public class ErrorDeClientes extends RuntimeException {
 
     private final int estado;
     private final String codigo;
 
-    public ErrorDeNegocioDelCore(int estado, String codigo) {
+    public ErrorDeClientes(int estado, String codigo) {
         super("El core respondio " + estado + " " + codigo);
         this.estado = estado;
         this.codigo = codigo;

@@ -52,9 +52,9 @@ class OperacionProtegidaTest extends PruebaOAuth {
     }
 
     @Test
-    @DisplayName("Un token valido de otro cliente (core.cuentas.leer) no alcanza: 403 insufficient_scope")
+    @DisplayName("Un token valido de otro cliente (cuentas.leer) no alcanza: 403 insufficient_scope")
     void tokenDeOtroCliente() throws Exception {
-        String ajeno = token("transferencias-service", SECRETO_TRANSFERENCIAS, "core.cuentas.leer");
+        String ajeno = token("pagos-service", SECRETO_TRANSFERENCIAS, "cuentas.leer");
         String activa = almacen.activa().kid();
 
         mvc.perform(post("/actuator/claves").header("Authorization", "Bearer " + ajeno)).andExpect(status().isForbidden());
@@ -89,13 +89,13 @@ class OperacionProtegidaTest extends PruebaOAuth {
                 .contentType(MediaType.APPLICATION_JSON).content(forzar)).andExpect(status().isForbidden());
         mvc.perform(get("/actuator/circuitbreakers")).andExpect(status().isOk());
 
-        assertThat(circuitos.circuitBreaker("core").getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(circuitos.circuitBreaker("clientes").getState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
     @Test
     @DisplayName("Ningun cliente distinto de operacion-banco puede pedir claves.administrar")
     void scopeExclusivo() throws Exception {
-        mvc.perform(post("/oauth2/token").with(httpBasic("transferencias-service", SECRETO_TRANSFERENCIAS))
+        mvc.perform(post("/oauth2/token").with(httpBasic("pagos-service", SECRETO_TRANSFERENCIAS))
                         .param("grant_type", "client_credentials").param("scope", "claves.administrar"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("invalid_scope"));
     }

@@ -35,7 +35,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 @ActiveProfiles("prueba")
 @AutoConfigureMockMvc
 @AutoConfigureMockRestServiceServer
-class LoginContraElCoreTest extends PruebaOAuth {
+class LoginContraClientesTest extends PruebaOAuth {
 
     @Autowired
     private MockRestServiceServer core;
@@ -53,8 +53,8 @@ class LoginContraElCoreTest extends PruebaOAuth {
     @DisplayName("Sin sesion, /oauth2/authorize lleva al formulario de login")
     void autorizarSinSesionPideLogin() throws Exception {
         mvc.perform(get("/oauth2/authorize").accept(MediaType.TEXT_HTML)
-                        .queryParam("response_type", "code").queryParam("client_id", "banca-web")
-                        .queryParam("redirect_uri", REDIRECCION).queryParam("scope", "transferencias.leer")
+                        .queryParam("response_type", "code").queryParam("client_id", "bff-web")
+                        .queryParam("redirect_uri", REDIRECCION).queryParam("scope", "pagos.leer")
                         .queryParam("code_challenge", desafio(verificador())).queryParam("code_challenge_method", "S256"))
                 .andExpect(redirectedUrlPattern("**/login"));
     }

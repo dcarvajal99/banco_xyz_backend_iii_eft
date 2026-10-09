@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.bancoxyz.auth.config.PropiedadesGitHub;
-import com.bancoxyz.auth.core.ClienteCore;
+import com.bancoxyz.auth.clientes.ClienteDeClientes;
 import com.bancoxyz.auth.oauth.UsuarioDelBanco;
 import com.bancoxyz.auth.oauth.UsuarioGitHub;
 import com.bancoxyz.auth.oauth.VinculacionGitHub;
@@ -63,7 +63,7 @@ class LoginConGitHubTest extends PruebaOAuth {
     private MockRestServiceServer core;
 
     @Autowired
-    private ClienteCore clienteCore;
+    private ClienteDeClientes clienteCore;
 
     @Autowired
     private PropiedadesGitHub propiedades;
@@ -187,8 +187,8 @@ class LoginConGitHubTest extends PruebaOAuth {
         OAuth2AuthenticationToken sesion = new OAuth2AuthenticationToken(usuario, usuario.getAuthorities(), "github");
         String verificador = verificador();
         String redireccion = mvc.perform(get("/oauth2/authorize")
-                        .queryParam("response_type", "code").queryParam("client_id", "banca-web")
-                        .queryParam("redirect_uri", REDIRECCION).queryParam("scope", "openid transferencias.escribir")
+                        .queryParam("response_type", "code").queryParam("client_id", "bff-web")
+                        .queryParam("redirect_uri", REDIRECCION).queryParam("scope", "openid pagos.escribir")
                         .queryParam("state", "estado-1").queryParam("code_challenge", desafio(verificador))
                         .queryParam("code_challenge_method", "S256").with(authentication(sesion)))
                 .andExpect(status().is3xxRedirection()).andReturn().getResponse().getRedirectedUrl();

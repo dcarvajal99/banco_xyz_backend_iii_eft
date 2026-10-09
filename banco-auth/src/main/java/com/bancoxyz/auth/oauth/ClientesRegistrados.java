@@ -17,19 +17,17 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 
 /**
- * Los clientes OAuth del banco y lo que cada uno puede pedir.
+ * Un cliente OAuth por canal y por servicio: cada uno puede pedir solo lo que su canal necesita.
  *
  * <ul>
- *   <li><b>banca-web</b>: la aplicacion de banca en linea (un backend web, cliente confidencial). Solo authorization_code
- *       con PKCE obligatorio: el usuario escribe su clave en banco-auth, nunca en la aplicacion. Recibe refresh token
- *       que rota en cada uso (el anterior queda invalido).</li>
- *   <li><b>transferencias-service</b>: un servicio, sin usuario. Solo client_credentials y solo el scope
- *       {@code core.cuentas.leer}: con ese token consulta una cuenta en el core.</li>
- *   <li><b>operacion-banco</b>: el equipo de operacion. Solo client_credentials y solo {@code claves.administrar}: con
- *       ese token rota o retira las claves de firma en {@code /actuator/claves}. Ningun otro cliente puede pedirlo.</li>
+ *   <li><b>bff-web</b>: confidencial (el secreto vive en el servidor del BFF). authorization_code + PKCE; el navegador
+ *       nunca ve el token (queda en la sesion del BFF).</li>
+ *   <li><b>banca-movil</b>: publico (una app instalada no guarda secretos). authorization_code + PKCE con redirect a
+ *       loopback (RFC 8252); solo clientes y sin scopes de administracion.</li>
+ *   <li><b>bff-cajero, pagos-service, cuentas-service</b>: servicios sin usuario, client_credentials y un scope.</li>
+ *   <li><b>operacion-banco</b>: rotacion de claves de firma ({@code claves.administrar}).</li>
  * </ul>
- *
- * <p>Los secretos llegan por variable de entorno y se guardan con bcrypt: en memoria no queda el secreto en claro.</p>
+ * Los secretos llegan por variable de entorno y se guardan con bcrypt.
  */
 @Configuration(proxyBeanMethods = false)
 public class ClientesRegistrados {
@@ -41,39 +39,56 @@ public class ClientesRegistrados {
 
     @Bean
     public RegisteredClientRepository clientes(PropiedadesAuth propiedades, PasswordEncoder codificador) {
-        PropiedadesAuth.Cliente web = propiedades.bancaWeb();
-        RegisteredClient bancaWeb = RegisteredClient.withId(UUID.nameUUIDFromBytes(web.id().getBytes()).toString())
-                .clientId(web.id())
+        PropiedadesAuth.Cliente web = propiedades.bffWeb();
+        RegisteredClient bffWeb = base(web.id())
                 .clientSecret(codificador.encode(web.secreto()))
-                .clientName("Banca en linea del Banco XYZ")
+                .clientName("Banca en linea (BFF web)")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .redirectUris(uris -> uris.addAll(web.redirectUris()))
-                .scope(OidcScopes.OPENID)
-                .scope(OidcScopes.PROFILE)
-                .scope(Alcances.TRANSFERENCIAS_ESCRIBIR)
-                .scope(Alcances.TRANSFERENCIAS_LEER)
-                .scope(Alcances.NOTIFICACIONES_LEER)
+                .scope(OidcScopes.OPENID).scope(OidcScopes.PROFILE)
+                .scopes(s -> s.addAll(java.util.List.of(Alcances.CUENTAS_LEER, Alcances.CUENTAS_ADMINISTRAR,
+                        Alcances.CLIENTES_LEER, Alcances.CLIENTES_PERFIL, Alcances.CLIENTES_ADMINISTRAR,
+                        Alcances.PAGOS_ESCRIBIR, Alcances.PAGOS_LEER, Alcances.REPORTES_LEER)))
                 .clientSettings(ClientSettings.builder().requireProofKey(true).requireAuthorizationConsent(false).build())
-                .tokenSettings(TokenSettings.builder()
-                        .accessTokenTimeToLive(propiedades.duracionToken())
-                        .refreshTokenTimeToLive(propiedades.duracionRefresco())
-                        .reuseRefreshTokens(false)
-                        .build())
+                .tokenSettings(tokens(propiedades))
                 .build();
-        RegisteredClient transferencias = servicio(propiedades.transferencias(), "transferencias-service (servicio a servicio)",
-                Alcances.CORE_CUENTAS_LEER, propiedades, codificador);
-        return new InMemoryRegisteredClientRepository(bancaWeb, transferencias,
-                servicio(propiedades.operacion(), "Operacion del banco (administracion de claves)", Alcances.CLAVES_ADMINISTRAR,
+        PropiedadesAuth.Cliente movil = propiedades.bancaMovil();
+        RegisteredClient bancaMovil = base(movil.id())
+                .clientName("Banca movil (app)")
+                .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                .redirectUris(uris -> uris.addAll(movil.redirectUris()))
+                .scope(OidcScopes.OPENID)
+                .scopes(s -> s.addAll(java.util.List.of(Alcances.CUENTAS_LEER, Alcances.CLIENTES_LEER,
+                        Alcances.PAGOS_ESCRIBIR, Alcances.PAGOS_LEER)))
+                .clientSettings(ClientSettings.builder().requireProofKey(true).requireAuthorizationConsent(false).build())
+                .tokenSettings(tokens(propiedades))
+                .build();
+        return new InMemoryRegisteredClientRepository(bffWeb, bancaMovil,
+                servicio(propiedades.bffCajero(), "BFF del cajero automatico", Alcances.CAJERO_OPERAR, propiedades, codificador),
+                servicio(propiedades.pagos(), "pagos-service", Alcances.CUENTAS_LEER, propiedades, codificador),
+                servicio(propiedades.cuentas(), "cuentas-service", Alcances.CLIENTES_LEER, propiedades, codificador),
+                servicio(propiedades.operacion(), "Operacion del banco (claves de firma)", Alcances.CLAVES_ADMINISTRAR,
                         propiedades, codificador));
+    }
+
+    private static RegisteredClient.Builder base(String id) {
+        return RegisteredClient.withId(UUID.nameUUIDFromBytes(id.getBytes()).toString()).clientId(id);
+    }
+
+    /** Access token corto; refresh token que rota en cada uso (el anterior queda invalido). */
+    private static TokenSettings tokens(PropiedadesAuth propiedades) {
+        return TokenSettings.builder().accessTokenTimeToLive(propiedades.duracionToken())
+                .refreshTokenTimeToLive(propiedades.duracionRefresco()).reuseRefreshTokens(false).build();
     }
 
     /** Cliente sin usuario: solo client_credentials, un scope y un token de vida corta. */
     private static RegisteredClient servicio(PropiedadesAuth.Cliente cliente, String nombre, String alcance,
                                              PropiedadesAuth propiedades, PasswordEncoder codificador) {
-        return RegisteredClient.withId(UUID.nameUUIDFromBytes(cliente.id().getBytes()).toString())
-                .clientId(cliente.id())
+        return base(cliente.id())
                 .clientSecret(codificador.encode(cliente.secreto()))
                 .clientName(nombre)
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)

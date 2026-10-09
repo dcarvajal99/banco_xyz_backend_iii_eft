@@ -4,10 +4,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.bancoxyz.auth.config.PropiedadesGitHub;
-import com.bancoxyz.auth.core.ClienteCore;
-import com.bancoxyz.auth.core.CoreNoDisponible;
-import com.bancoxyz.auth.core.ErrorDeNegocioDelCore;
-import com.bancoxyz.auth.core.UsuarioAutenticado;
+import com.bancoxyz.auth.clientes.ClienteDeClientes;
+import com.bancoxyz.auth.clientes.ClientesNoDisponible;
+import com.bancoxyz.auth.clientes.ErrorDeClientes;
+import com.bancoxyz.auth.clientes.UsuarioAutenticado;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,16 +44,16 @@ public class VinculacionGitHub implements OAuth2UserService<OAuth2UserRequest, O
 
     private final OAuth2UserService<OAuth2UserRequest, OAuth2User> github;
     private final PropiedadesGitHub propiedades;
-    private final ClienteCore core;
+    private final ClienteDeClientes core;
 
     @Autowired
-    public VinculacionGitHub(PropiedadesGitHub propiedades, ClienteCore core) {
+    public VinculacionGitHub(PropiedadesGitHub propiedades, ClienteDeClientes core) {
         this(new DefaultOAuth2UserService(), propiedades, core);
     }
 
     /** Para las pruebas: GitHub simulado en vez de la llamada real a api.github.com. */
     public VinculacionGitHub(OAuth2UserService<OAuth2UserRequest, OAuth2User> github, PropiedadesGitHub propiedades,
-                      ClienteCore core) {
+                      ClienteDeClientes core) {
         this.github = github;
         this.propiedades = propiedades;
         this.core = core;
@@ -74,13 +74,13 @@ public class VinculacionGitHub implements OAuth2UserService<OAuth2UserRequest, O
             log.info("GitHub {} (id {}) inicio sesion como {}", login, id, cliente.usuario());
             return new UsuarioGitHub(new UsuarioDelBanco(cliente.usuario(), cliente.usuarioId(), cliente.clienteId(),
                     cliente.rol()), id, login, resumen(cuenta.getAttributes()));
-        } catch (ErrorDeNegocioDelCore rechazo) {
+        } catch (ErrorDeClientes rechazo) {
             throw switch (rechazo.getEstado()) {
                 case 423 -> rechazo(BLOQUEADO, "El usuario del banco vinculado esta bloqueado");
                 case 403 -> rechazo(NO_HABILITADO, "El usuario del banco vinculado no puede usar la banca en linea");
                 default -> rechazo(NO_VINCULADA, "La cuenta vinculada ya no existe en el banco");
             };
-        } catch (CoreNoDisponible caido) {
+        } catch (ClientesNoDisponible caido) {
             throw new OAuth2AuthenticationException(new OAuth2Error(SERVICIO,
                     "El servicio de autenticacion no esta disponible; intente en unos segundos", null), caido);
         }

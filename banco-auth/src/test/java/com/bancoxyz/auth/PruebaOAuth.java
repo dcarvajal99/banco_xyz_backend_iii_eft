@@ -23,10 +23,10 @@ import org.springframework.web.util.UriComponentsBuilder;
 /** Ayudas comunes de las pruebas del servidor de autorizacion: clientes, PKCE y un usuario ya autenticado. */
 abstract class PruebaOAuth {
 
-    static final String CORE = "https://localhost:8080/api/v1/autenticacion/usuarios";
-    static final String REDIRECCION = "http://127.0.0.1:8099/callback";
-    static final String SECRETO_WEB = "banca-web-secreto-dev";
-    static final String SECRETO_TRANSFERENCIAS = "transferencias-oauth-dev";
+    static final String CORE = "https://localhost:8101/api/v1/autenticacion/usuarios";
+    static final String REDIRECCION = "https://localhost:8090/login/oauth2/code/banco-auth";
+    static final String SECRETO_WEB = "bff-web-secreto-dev";
+    static final String SECRETO_TRANSFERENCIAS = "pagos-oauth-dev";
 
     @Autowired
     protected MockMvc mvc;
@@ -54,7 +54,7 @@ abstract class PruebaOAuth {
     ResultActions autorizar(String scopes, String desafio) throws Exception {
         // El servidor lee la solicitud de autorizacion desde la query string, como la arma el navegador.
         var solicitud = get("/oauth2/authorize")
-                .queryParam("response_type", "code").queryParam("client_id", "banca-web").queryParam("redirect_uri", REDIRECCION)
+                .queryParam("response_type", "code").queryParam("client_id", "bff-web").queryParam("redirect_uri", REDIRECCION)
                 .queryParam("scope", scopes).queryParam("state", "estado-1")
                 .with(authentication(diana()));
         if (desafio != null) {
@@ -68,7 +68,7 @@ abstract class PruebaOAuth {
     }
 
     ResultActions canjear(String codigo, String verificador) throws Exception {
-        var solicitud = post("/oauth2/token").with(httpBasic("banca-web", SECRETO_WEB))
+        var solicitud = post("/oauth2/token").with(httpBasic("bff-web", SECRETO_WEB))
                 .param("grant_type", "authorization_code").param("code", codigo).param("redirect_uri", REDIRECCION);
         if (verificador != null) {
             solicitud.param("code_verifier", verificador);
