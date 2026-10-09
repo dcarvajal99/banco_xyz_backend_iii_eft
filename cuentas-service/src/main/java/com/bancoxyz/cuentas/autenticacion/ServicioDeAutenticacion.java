@@ -1,111 +1,48 @@
 package com.bancoxyz.cuentas.autenticacion;
 
-import java.time.Clock;
-import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.Optional;
 
-import com.bancoxyz.cuentas.seguridad.Canal;
+import com.bancoxyz.cuentas.alerta.AlertaDeSeguridad;
+import com.bancoxyz.cuentas.cuenta.RepositorioCuentas;
+import com.bancoxyz.cuentas.outbox.Outbox;
+import com.bancoxyz.cuentas.pago.Topicos;
 import com.bancoxyz.cuentas.tarjeta.RepositorioTarjetas;
 import com.bancoxyz.cuentas.tarjeta.Tarjeta;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+
 /**
- * Verifica credenciales de usuario y de tarjeta.
+ * Verifica tarjeta y PIN para el BFF del cajero.
  *
- * <h2>Por que devuelve un resultado y no lanza excepciones</h2>
- * <p>Un intento fallido tiene que QUEDAR REGISTRADO aunque la respuesta sea un error. Si el servicio
- * lanzara una excepcion de negocio, la transaccion se revertiria y el contador de intentos volveria a
- * cero: bastaria con fallar una y otra vez para no bloquear nunca. Por eso el servicio confirma la
- * transaccion y el controlador traduce el resultado a 401 o 423 despues.</p>
- *
- * <h2>Por que el bloqueo de PIN vive aqui y no en el BFF del cajero</h2>
- * <p>Si viviera en el BFF, bastaria con cambiar de cajero para seguir probando PIN. En el core el
- * contador es uno solo por tarjeta, venga el intento desde el terminal que venga.</p>
+ * <p>Devuelve un resultado en vez de lanzar: el intento fallido debe quedar guardado aunque la respuesta sea un error
+ * (con una excepcion la transaccion se revertiria y el contador volveria a cero). El contador vive aqui y no en el BFF:
+ * cambiar de cajero no da intentos nuevos. Al tercer PIN incorrecto la tarjeta se bloquea y se publica una alerta.</p>
  */
 @Service
 public class ServicioDeAutenticacion {
 
-    static final int MAXIMO_INTENTOS_USUARIO = 5;
-    static final Duration DURACION_BLOQUEO_USUARIO = Duration.ofMinutes(15);
     static final int MAXIMO_INTENTOS_PIN = 3;
-
-    public enum EstadoUsuario { AUTENTICADO, CREDENCIALES_INVALIDAS, BLOQUEADO, ROL_NO_PERMITIDO }
-
-    public record ResultadoUsuario(EstadoUsuario estado, Usuario usuario) {
-    }
-
-    public enum EstadoIdentificacion { IDENTIFICADO, NO_ENCONTRADO, BLOQUEADO, ROL_NO_PERMITIDO }
-
-    public record ResultadoIdentificacion(EstadoIdentificacion estado, Usuario usuario) {
-    }
 
     public enum EstadoTarjeta { AUTENTICADA, TARJETA_INVALIDA, PIN_INCORRECTO, BLOQUEADA }
 
     public record ResultadoTarjeta(EstadoTarjeta estado, Tarjeta tarjeta, int intentosRestantes) {
     }
 
-    private final RepositorioUsuarios usuarios;
     private final RepositorioTarjetas tarjetas;
+    private final RepositorioCuentas cuentas;
     private final CodificadorDeSecretos codificador;
+    private final Outbox outbox;
     private final Clock reloj;
 
-    public ServicioDeAutenticacion(RepositorioUsuarios usuarios, RepositorioTarjetas tarjetas,
-                                   CodificadorDeSecretos codificador, Clock reloj) {
-        this.usuarios = usuarios;
+    public ServicioDeAutenticacion(RepositorioTarjetas tarjetas, RepositorioCuentas cuentas,
+                                   CodificadorDeSecretos codificador, Outbox outbox, Clock reloj) {
         this.tarjetas = tarjetas;
+        this.cuentas = cuentas;
         this.codificador = codificador;
+        this.outbox = outbox;
         this.reloj = reloj;
-    }
-
-    @Transactional
-    public ResultadoUsuario autenticarUsuario(Canal canal, String nombreUsuario, String clave) {
-        Optional<Usuario> encontrado = usuarios.buscarParaActualizar(nombreUsuario);
-        if (encontrado.isEmpty() || !encontrado.get().isActivo()) {
-            codificador.verificarContraFicticio(clave);
-            return new ResultadoUsuario(EstadoUsuario.CREDENCIALES_INVALIDAS, null);
-        }
-        Usuario usuario = encontrado.get();
-        LocalDateTime ahora = LocalDateTime.now(reloj);
-        // Con un bloqueo vigente la clave ni se evalua: si no, un atacante sabria cuando acerto.
-        if (usuario.bloqueadoEn(ahora)) {
-            return new ResultadoUsuario(EstadoUsuario.BLOQUEADO, usuario);
-        }
-        usuario.liberarBloqueoVencido(ahora);
-        if (!codificador.coincide(clave, usuario.getPasswordHash())) {
-            usuario.registrarFallo(ahora, MAXIMO_INTENTOS_USUARIO, DURACION_BLOQUEO_USUARIO);
-            return new ResultadoUsuario(usuario.bloqueadoEn(ahora) ? EstadoUsuario.BLOQUEADO
-                    : EstadoUsuario.CREDENCIALES_INVALIDAS, usuario);
-        }
-        usuario.registrarExito();
-        // banco-auth emite tokens para transferir entre cuentas propias: como el movil, es solo para clientes.
-        if ((canal == Canal.MOVIL || canal == Canal.AUTENTICACION) && usuario.esEjecutivo()) {
-            return new ResultadoUsuario(EstadoUsuario.ROL_NO_PERMITIDO, usuario);
-        }
-        return new ResultadoUsuario(EstadoUsuario.AUTENTICADO, usuario);
-    }
-
-    /**
-     * Identifica a un usuario por su nombre, sin clave. Lo usa banco-auth cuando la persona ya se autentico con un
-     * proveedor de identidad externo (GitHub) cuya cuenta esta vinculada a este usuario: el core confirma que existe,
-     * que esta activo y sin bloqueo, y que es un cliente. Solo el canal AUTENTICACION llega aqui (mTLS + clave de canal).
-     * No toca el contador de intentos: no hay clave que probar.
-     */
-    @Transactional(readOnly = true)
-    public ResultadoIdentificacion identificarUsuario(String nombreUsuario) {
-        Optional<Usuario> encontrado = usuarios.findByUsuario(nombreUsuario);
-        if (encontrado.isEmpty() || !encontrado.get().isActivo()) {
-            return new ResultadoIdentificacion(EstadoIdentificacion.NO_ENCONTRADO, null);
-        }
-        Usuario usuario = encontrado.get();
-        if (usuario.bloqueadoEn(LocalDateTime.now(reloj))) {
-            return new ResultadoIdentificacion(EstadoIdentificacion.BLOQUEADO, usuario);
-        }
-        if (usuario.esEjecutivo()) {
-            return new ResultadoIdentificacion(EstadoIdentificacion.ROL_NO_PERMITIDO, usuario);
-        }
-        return new ResultadoIdentificacion(EstadoIdentificacion.IDENTIFICADO, usuario);
     }
 
     @Transactional
@@ -125,9 +62,12 @@ public class ServicioDeAutenticacion {
         }
         tarjeta.registrarFallo(MAXIMO_INTENTOS_PIN);
         if (tarjeta.isBloqueada()) {
+            Long clienteId = cuentas.findById(tarjeta.getCuentaId()).map(c -> c.getClienteId()).orElse(null);
+            AlertaDeSeguridad alerta = AlertaDeSeguridad.tarjetaBloqueada(clienteId, tarjeta.getCuentaId(),
+                    tarjeta.getUltimos4(), reloj.instant());
+            outbox.registrar(Topicos.SEGURIDAD_ALERTAS, alerta.eventoId(), alerta.clave(), alerta.tipo(), alerta);
             return new ResultadoTarjeta(EstadoTarjeta.BLOQUEADA, tarjeta, 0);
         }
-        return new ResultadoTarjeta(EstadoTarjeta.PIN_INCORRECTO, tarjeta,
-                MAXIMO_INTENTOS_PIN - tarjeta.getIntentosFallidos());
+        return new ResultadoTarjeta(EstadoTarjeta.PIN_INCORRECTO, tarjeta, MAXIMO_INTENTOS_PIN - tarjeta.getIntentosFallidos());
     }
 }

@@ -25,4 +25,7 @@ public interface RepositorioCuentas extends JpaRepository<Cuenta, Long> {
     List<Cuenta> findByClienteIdOrderByIdAsc(Long clienteId);
 
     long countByClienteId(Long clienteId);
+
+    /** Titular ya conocido de un cliente: respaldo de la apertura si clientes-service no responde. */
+    Optional<Cuenta> findFirstByClienteIdOrderByIdAsc(Long clienteId);
 }

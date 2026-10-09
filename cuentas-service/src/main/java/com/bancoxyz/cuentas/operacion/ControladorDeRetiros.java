@@ -1,13 +1,11 @@
 package com.bancoxyz.cuentas.operacion;
 
 import com.bancoxyz.cuentas.error.Errores;
-import com.bancoxyz.cuentas.seguridad.Canal;
 import com.bancoxyz.cuentas.seguridad.ControlDeAcceso;
 import com.bancoxyz.cuentas.tarjeta.Tarjeta;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,15 +28,14 @@ public class ControladorDeRetiros {
         this.acceso = acceso;
     }
 
-    @Operation(summary = "Retiro en cajero, idempotente por Idempotency-Key")
+    @Operation(summary = "Retiro en cajero (cajero.operar), idempotente por Idempotency-Key")
     @PostMapping("/{cuentaId}/retiros")
     public ResponseEntity<OperacionDto> retirar(@PathVariable long cuentaId,
                                                 @RequestHeader(value = ENCABEZADO_IDEMPOTENCIA, required = false) String clave,
                                                 @RequestHeader(value = ControlDeAcceso.ENCABEZADO_TARJETA, required = false) String tarjetaId,
                                                 @RequestHeader(value = ControlDeAcceso.ENCABEZADO_TERMINAL, required = false) String terminalId,
-                                                @RequestBody(required = false) SolicitudRetiro solicitud,
-                                                Authentication autenticacion) {
-        Tarjeta tarjeta = acceso.tarjeta(Canal.desde(autenticacion), tarjetaId, terminalId);
+                                                @RequestBody(required = false) SolicitudRetiro solicitud) {
+        Tarjeta tarjeta = acceso.tarjeta(tarjetaId, terminalId);
         if (clave == null || clave.length() < 8 || clave.length() > 80) {
             throw Errores.solicitudInvalida("Idempotency-Key es obligatoria y debe tener entre 8 y 80 caracteres");
         }

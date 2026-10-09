@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-import com.bancoxyz.cuentas.seguridad.FiltroCertificadoDeCanal;
+import com.bancoxyz.cuentas.seguridad.FiltroCertificadoDeLlamante;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,7 +47,7 @@ public class FiltroCorrelacion extends OncePerRequestFilter {
         } finally {
             if (!request.getRequestURI().startsWith("/actuator")) {
                 log.info("{} {} -> {} ({} ms) certificado={}", request.getMethod(), request.getRequestURI(), response.getStatus(),
-                        (System.nanoTime() - inicio) / 1_000_000, FiltroCertificadoDeCanal.nombreComun(request).orElse("ninguno"));
+                        (System.nanoTime() - inicio) / 1_000_000, FiltroCertificadoDeLlamante.nombreComun(request).orElse("ninguno"));
             }
             MDC.remove(CLAVE_MDC);
         }

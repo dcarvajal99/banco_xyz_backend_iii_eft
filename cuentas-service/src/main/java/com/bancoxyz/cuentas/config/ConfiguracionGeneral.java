@@ -23,7 +23,7 @@ public class ConfiguracionGeneral {
      * salen de este reloj, y las pruebas lo reemplazan por uno fijo.</p>
      */
     @Bean
-    public Clock reloj(PropiedadesCore propiedades) {
+    public Clock reloj(PropiedadesCuentas propiedades) {
         return Clock.system(ZoneId.of(propiedades.zonaHoraria()));
     }
 
@@ -31,15 +31,15 @@ public class ConfiguracionGeneral {
     public OpenAPI contratoOpenApi() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Banco XYZ - Core API")
+                        .title("Banco XYZ - cuentas-service")
                         .version("1.0.0")
-                        .description("Backend principal, agnostico del canal. Entrega datos completos y aplica las "
-                                + "reglas de negocio comunes. Solo lo consumen los BFF web, movil y cajero, cada uno "
-                                + "con su credencial de servicio (HTTP Basic) y propagando la identidad del usuario "
-                                + "final en X-Usuario-Id o X-Tarjeta-Id/X-Terminal-Id."))
-                .components(new Components().addSecuritySchemes("credencialDeCanal",
-                        new SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("basic")
-                                .description("bff-web, bff-movil o bff-cajero")))
-                .addSecurityItem(new SecurityRequirement().addList("credencialDeCanal"));
+                        .description("Gestion de cuentas: apertura, cierre y mantenimiento; saldos, movimientos, estados "
+                                + "anuales, tarjetas y retiros en cajero; participante de la saga de pagos. Los BFF web y "
+                                + "movil llaman con el access token del usuario (token relay); el BFF del cajero y "
+                                + "pagos-service con su propio token de servicio. Todos presentan su certificado (mTLS)."))
+                .components(new Components().addSecuritySchemes("token", new SecurityScheme()
+                        .type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")
+                        .description("Access token de banco-auth")))
+                .addSecurityItem(new SecurityRequirement().addList("token"));
     }
 }

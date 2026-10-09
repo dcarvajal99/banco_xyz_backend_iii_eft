@@ -1,16 +1,14 @@
 package com.bancoxyz.cuentas.cierre;
 
 /**
- * Conjunto de datos que publica el batch, con la tabla donde queda y el archivo del que salio.
- *
- * <p>Cada conjunto puede venir de una ejecucion distinta: un cierre completo los escribe los tres
- * con el mismo job_execution_id, pero una corrida individual posterior reemplaza solo el suyo.</p>
+ * Conjunto de datos que publica el batch en el esquema migracion: tabla y archivo legacy de origen.
+ * Cada conjunto puede venir de una ejecucion distinta (un cierre completo o una corrida individual posterior).
  */
 public enum Conjunto {
 
-    INTERESES("cuenta_interes", "intereses.csv"),
-    MOVIMIENTOS("movimiento_anual", "cuentas_anuales.csv"),
-    TRANSACCIONES("resumen_diario", "transacciones.csv");
+    INTERESES("cierre_cuenta", "intereses_trimestrales.csv"),
+    MOVIMIENTOS("movimiento_anual", "estados_financieros_anuales.csv"),
+    TRANSACCIONES("resumen_diario", "movimientos_financieros_diarios.csv");
 
     private final String tabla;
     private final String archivo;

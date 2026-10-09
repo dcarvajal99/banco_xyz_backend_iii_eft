@@ -1,6 +1,7 @@
 package com.bancoxyz.cuentas.error;
 
 import java.net.URI;
+import java.util.Map;
 
 import jakarta.persistence.LockTimeoutException;
 import jakarta.persistence.PessimisticLockException;
@@ -9,6 +10,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -17,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -74,6 +77,24 @@ public class ManejadorDeErrores extends ResponseEntityExceptionHandler {
     @ExceptionHandler({MethodArgumentTypeMismatchException.class, ConstraintViolationException.class})
     public ResponseEntity<Object> parametroInvalido(RuntimeException ex, HttpServletRequest request) {
         return negocio(Errores.solicitudInvalida("Parametro invalido"), request);
+    }
+
+    /** Validacion del DTO de entrada: ademas del codigo, que campo fallo y por que. */
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex, HttpHeaders headers,
+                                                                  HttpStatusCode status, WebRequest request) {
+        ProblemDetail problema = Problemas.crear(HttpStatus.BAD_REQUEST, "SOLICITUD_INVALIDA", "Solicitud invalida",
+                "Uno o mas campos no son validos", ((ServletWebRequest) request).getRequest().getRequestURI());
+        problema.setProperty("errores", ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> Map.of("campo", e.getField(), "mensaje", String.valueOf(e.getDefaultMessage())))
+                .toList());
+        return responder(problema);
+    }
+
+    /** Version optimista de la cuenta: otra operacion la modifico primero. */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<Object> versionDistinta(ObjectOptimisticLockingFailureException ex, HttpServletRequest request) {
+        return negocio(Errores.cuentaOcupada(), request);
     }
 
     @ExceptionHandler(Exception.class)

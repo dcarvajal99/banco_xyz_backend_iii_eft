@@ -15,6 +15,9 @@ import java.util.Optional;
 import com.bancoxyz.cuentas.cuenta.Cuenta;
 import com.bancoxyz.cuentas.cuenta.RepositorioCuentas;
 import com.bancoxyz.cuentas.error.Errores;
+import com.bancoxyz.cuentas.outbox.Outbox;
+import com.bancoxyz.cuentas.pago.EventoDeMovimiento;
+import com.bancoxyz.cuentas.pago.Topicos;
 import com.bancoxyz.cuentas.tarjeta.RepositorioTarjetas;
 import com.bancoxyz.cuentas.tarjeta.Tarjeta;
 import org.springframework.stereotype.Service;
@@ -41,13 +44,15 @@ public class ServicioDeRetiros {
     private final RepositorioCuentas cuentas;
     private final RepositorioTarjetas tarjetas;
     private final RepositorioOperaciones operaciones;
+    private final Outbox outbox;
     private final Clock reloj;
 
     public ServicioDeRetiros(RepositorioCuentas cuentas, RepositorioTarjetas tarjetas,
-                             RepositorioOperaciones operaciones, Clock reloj) {
+                             RepositorioOperaciones operaciones, Outbox outbox, Clock reloj) {
         this.cuentas = cuentas;
         this.tarjetas = tarjetas;
         this.operaciones = operaciones;
+        this.outbox = outbox;
         this.reloj = reloj;
     }
 
@@ -77,6 +82,9 @@ public class ServicioDeRetiros {
         if (tarjeta.isBloqueada()) {
             throw Errores.tarjetaBloqueada();
         }
+        if (!cuenta.estaActiva()) {
+            throw Errores.cuentaNoOperativa();
+        }
         if (!cuenta.esAhorro()) {
             throw Errores.cuentaNoAdmiteRetiros();
         }
@@ -93,6 +101,12 @@ public class ServicioDeRetiros {
         cuenta.descontar(importe, ahora);
         Operacion operacion = operaciones.save(Operacion.retiroEnCajero(cuentaId, tarjetaId, terminalId, importe,
                 cuenta.getSaldoDisponible(), claveIdempotencia, huella, ahora));
+        // Transaccion completada: el aviso al cliente sale por Kafka con el outbox, en esta misma transaccion.
+        if (cuenta.getClienteId() != null) {
+            EventoDeMovimiento evento = EventoDeMovimiento.retiro(cuenta.getClienteId(), cuentaId, importe,
+                    cuenta.getSaldoDisponible(), reloj.instant());
+            outbox.registrar(Topicos.MOVIMIENTOS, evento.eventoId(), evento.clave(), evento.tipo(), evento);
+        }
         return new ResultadoRetiro(operacion, false);
     }
 

@@ -7,15 +7,12 @@ import java.util.HexFormat;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-import com.bancoxyz.cuentas.config.PropiedadesCore;
+import com.bancoxyz.cuentas.config.PropiedadesCuentas;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
  * Hash de claves de usuario y PIN (BCrypt) y huella del numero de tarjeta (HMAC-SHA256 con pepper).
- *
- * <p>No es un bean {@code PasswordEncoder} a proposito: el unico de ese tipo es el de las credenciales
- * de servicio (costo 4), y dos beans del mismo tipo confundirian a la autoconfiguracion de Spring Security.</p>
  *
  * <p>El PAN se guarda como HMAC y no como SHA-256 simple: un numero de 16 digitos con prefijo conocido
  * tiene poca entropia y un hash sin secreto se revierte por fuerza bruta en minutos.</p>
@@ -27,7 +24,7 @@ public class CodificadorDeSecretos {
     private final byte[] pepper;
     private final String hashFicticio;
 
-    public CodificadorDeSecretos(PropiedadesCore propiedades) {
+    public CodificadorDeSecretos(PropiedadesCuentas propiedades) {
         this.bcrypt = new BCryptPasswordEncoder(propiedades.seguridad().bcryptFuerza());
         this.pepper = propiedades.seguridad().pepperTarjetas().getBytes(StandardCharsets.UTF_8);
         this.hashFicticio = bcrypt.encode("valor-que-nunca-coincide");

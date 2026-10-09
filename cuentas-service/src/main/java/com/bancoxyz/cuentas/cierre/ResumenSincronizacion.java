@@ -1,11 +1,10 @@
 package com.bancoxyz.cuentas.cierre;
 
-/** Lo que hizo una sincronizacion del cierre. Se imprime al arrancar y lo usan las pruebas. */
-public record ResumenSincronizacion(boolean hayCierre, Long jobExecutionId, String calidad, int cuentasNuevas,
-                                    int cuentasExistentes, int clientesNuevos, int usuariosNuevos,
-                                    int tarjetasNuevas) {
+/** Resultado de abrir las cuentas del cierre publicado. */
+public record ResumenSincronizacion(boolean conCierre, long jobExecutionId, String calidad, int cuentasEnCierre,
+                                    int cuentasNuevas, int tarjetasNuevas) {
 
     static ResumenSincronizacion sinCierre() {
-        return new ResumenSincronizacion(false, null, null, 0, 0, 0, 0, 0);
+        return new ResumenSincronizacion(false, 0, null, 0, 0, 0);
     }
 }

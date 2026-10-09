@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.bancoxyz.cuentas.error.Errores;
 import io.swagger.v3.oas.annotations.Operation;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,11 +21,11 @@ public class ControladorDeCierres {
 
     @Operation(summary = "Ejecuciones del batch publicadas por conjunto de datos")
     @GetMapping("/vigentes")
-    public List<CierrePublicado> vigentes() {
+    public ResponseEntity<List<CierrePublicado>> vigentes() {
         List<CierrePublicado> cierres = lector.vigentes();
         if (cierres.isEmpty()) {
             throw Errores.sinCierrePublicado();
         }
-        return cierres;
+        return ResponseEntity.ok(cierres);
     }
 }

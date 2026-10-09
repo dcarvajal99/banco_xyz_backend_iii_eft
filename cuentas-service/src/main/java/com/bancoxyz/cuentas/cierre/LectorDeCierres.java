@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
  * COMPLETED. Una corrida FAILED nunca se publica aunque haya dejado filas escritas: es exactamente lo
  * que el decisor de calidad de las semanas 2 y 3 quiso impedir.</p>
  *
- * <p>SQL de solo lectura y calificado con {@code public.}: el core nunca escribe en el esquema del batch.</p>
+ * <p>Solo lectura: cuentas-service nunca escribe en el esquema migracion ni en los metadatos BATCH_* (public).</p>
  */
 @Repository
 public class LectorDeCierres {
@@ -46,7 +46,7 @@ public class LectorDeCierres {
                 join public.batch_job_instance ji on ji.job_instance_id = je.job_instance_id
                 where je.job_execution_id = (
                     select max(t.job_execution_id)
-                    from public.%s t
+                    from migracion.%s t
                     join public.batch_job_execution j2 on j2.job_execution_id = t.job_execution_id
                     where j2.status = 'COMPLETED')
                 """.formatted(conjunto.tabla());

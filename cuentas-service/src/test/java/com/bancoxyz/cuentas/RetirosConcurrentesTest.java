@@ -25,7 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * La prueba que justifica el bloqueo pesimista. NO es @Transactional: cada hilo debe tener su propia
  * transaccion y competir de verdad por la fila de la cuenta.
  */
-class RetirosConcurrentesTest extends PruebaDelCore {
+class RetirosConcurrentesTest extends PruebaDeCuentas {
 
     @Autowired
     private ServicioDeRetiros retiros;
@@ -46,7 +46,7 @@ class RetirosConcurrentesTest extends PruebaDelCore {
         Map<String, Long> conteo = resultados.stream().collect(Collectors.groupingBy(r -> r, Collectors.counting()));
         assertThat(conteo).containsEntry("APROBADO", 5L).containsEntry("SALDO_INSUFICIENTE", 15L).hasSize(2);
         assertThat(saldo(102)).isEqualTo("0");
-        assertThat(jdbc.sql("select count(*) from core.operacion where cuenta_id = 102").query(Long.class).single())
+        assertThat(jdbc.sql("select count(*) from cuentas.operacion where cuenta_id = 102").query(Long.class).single())
                 .isEqualTo(5L);
     }
 
@@ -60,7 +60,7 @@ class RetirosConcurrentesTest extends PruebaDelCore {
         assertThat(resultados).extracting(r -> r.operacion().getId()).containsOnly(resultados.get(0).operacion().getId());
         assertThat(resultados).filteredOn(r -> !r.repetida()).hasSize(1);
         assertThat(saldo(101)).isEqualTo("7040");
-        assertThat(jdbc.sql("select count(*) from core.operacion").query(Long.class).single()).isEqualTo(1L);
+        assertThat(jdbc.sql("select count(*) from cuentas.operacion").query(Long.class).single()).isEqualTo(1L);
     }
 
     private interface Tarea<T> {

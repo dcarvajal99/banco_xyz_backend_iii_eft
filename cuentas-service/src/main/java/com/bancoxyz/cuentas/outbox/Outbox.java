@@ -4,19 +4,17 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import com.bancoxyz.cuentas.transferencia.EventoDeTransferencia;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 
 /**
- * Transactional outbox del core.
+ * Transactional outbox de cuentas-service.
  *
- * <p>{@link #registrar} se llama dentro de la transaccion que cambia los saldos: el evento queda guardado junto con el
- * cambio, o no queda ninguno de los dos. {@link PublicadorDeOutbox} lo envia a Kafka despues. Entrega al menos una vez:
- * si el publicador cae entre enviar y marcar, el evento se reenvia con el mismo {@code eventoId} y el consumidor lo
- * descarta como duplicado.</p>
+ * <p>{@link #registrar} se llama dentro de la transaccion que cambia el estado (saldos, una tarjeta): el evento queda
+ * guardado junto con el cambio, o no queda ninguno de los dos. {@link PublicadorDeOutbox} lo envia a Kafka despues.
+ * Entrega al menos una vez: el consumidor descarta duplicados por {@code eventoId}.</p>
  */
 @Component
 public class Outbox {
@@ -35,26 +33,26 @@ public class Outbox {
         this.reloj = reloj;
     }
 
-    public void registrar(String topico, EventoDeTransferencia evento) {
+    public void registrar(String topico, String eventoId, String clave, String tipo, Object evento) {
         jdbc.sql("""
-                        insert into core.outbox (evento_id, topico, clave, tipo, payload, creado_en)
+                        insert into cuentas.outbox (evento_id, topico, clave, tipo, payload, creado_en)
                         values (:evento, :topico, :clave, :tipo, :payload, :ahora)""")
-                .param("evento", evento.eventoId())
+                .param("evento", eventoId)
                 .param("topico", topico)
-                .param("clave", evento.clave())
-                .param("tipo", evento.tipo())
+                .param("clave", clave)
+                .param("tipo", tipo)
                 .param("payload", aJson(evento))
                 .param("ahora", LocalDateTime.now(reloj))
                 .update();
     }
 
     /**
-     * Los mas antiguos sin publicar, bloqueados para esta transaccion. {@code skip locked}: si corre otra instancia del
-     * core, cada una toma filas distintas en vez de esperar o publicar dos veces.
+     * Los mas antiguos sin publicar, bloqueados para esta transaccion. {@code skip locked}: con varias instancias del
+     * servicio cada una toma filas distintas en vez de esperar o publicar dos veces.
      */
     public List<Pendiente> pendientes(int limite) {
         return jdbc.sql("""
-                        select id, evento_id, topico, clave, tipo, payload from core.outbox
+                        select id, evento_id, topico, clave, tipo, payload from cuentas.outbox
                         where publicado_en is null order by id limit :limite for update skip locked""")
                 .param("limite", limite)
                 .query((fila, n) -> new Pendiente(fila.getLong("id"), fila.getString("evento_id"),
@@ -63,19 +61,19 @@ public class Outbox {
     }
 
     public void marcarPublicado(long id) {
-        jdbc.sql("update core.outbox set publicado_en = :ahora where id = :id")
+        jdbc.sql("update cuentas.outbox set publicado_en = :ahora where id = :id")
                 .param("ahora", LocalDateTime.now(reloj)).param("id", id).update();
     }
 
     public long contarPendientes() {
-        return jdbc.sql("select count(*) from core.outbox where publicado_en is null").query(Long.class).single();
+        return jdbc.sql("select count(*) from cuentas.outbox where publicado_en is null").query(Long.class).single();
     }
 
-    private String aJson(EventoDeTransferencia evento) {
+    private String aJson(Object evento) {
         try {
             return json.writeValueAsString(evento);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("No se pudo serializar el evento " + evento.eventoId(), e);
+            throw new IllegalStateException("No se pudo serializar el evento", e);
         }
     }
 }

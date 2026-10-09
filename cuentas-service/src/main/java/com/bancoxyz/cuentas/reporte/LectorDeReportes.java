@@ -29,7 +29,7 @@ public class LectorDeReportes {
         StringBuilder sql = new StringBuilder("""
                 select fecha, cantidad_transacciones, total_debitos, total_creditos, monto_maximo,
                        cantidad_anomalias, job_execution_id
-                from public.resumen_diario
+                from migracion.resumen_diario
                 where job_execution_id = :job
                 """);
         if (desde != null) {
@@ -62,7 +62,7 @@ public class LectorDeReportes {
         for (CierrePublicado cierre : vigentes) {
             rechazados.addAll(jdbc.sql("""
                             select job_nombre, clasificacion, count(*) as cantidad
-                            from public.registro_rechazado
+                            from migracion.registro_rechazado
                             where job_execution_id = :job and archivo = :archivo
                             group by job_nombre, clasificacion
                             order by job_nombre, clasificacion

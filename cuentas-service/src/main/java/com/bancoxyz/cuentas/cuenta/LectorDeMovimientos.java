@@ -8,7 +8,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * Movimientos de una cuenta: los del cierre publicado del batch mas los retiros en linea del core.
+ * Movimientos de una cuenta: los del cierre publicado por el batch mas los en linea (retiros y pagos).
  *
  * <p>La union y la paginacion se hacen en la base (UNION ALL + LIMIT/OFFSET) y no en memoria: una
  * cuenta real tiene miles de movimientos, y traerlos todos para mostrar 20 no escala.</p>
@@ -28,14 +28,15 @@ public class LectorDeMovimientos {
                             select 'CIERRE' as origen, m.id as id, m.cuenta_id as cuenta_id, m.fecha as fecha,
                                    m.tipo_transaccion as tipo, m.monto as monto, m.descripcion as descripcion,
                                    m.anomalia as anomalia, m.observacion as observacion
-                            from public.movimiento_anual m
+                            from migracion.movimiento_anual m
                             where m.cuenta_id = :cuenta and m.job_execution_id = :job
                             union all
-                            select 'EN_LINEA', o.id, o.cuenta_id, cast(o.creada_en as date), 'retiro', -o.monto,
-                                   concat('Retiro en cajero ', coalesce(o.terminal_id, '')), false,
-                                   cast(null as varchar(255))
-                            from core.operacion o
-                            where o.cuenta_id = :cuenta and o.tipo = 'RETIRO'
+                            select 'EN_LINEA', o.id, o.cuenta_id, cast(o.creada_en as date), lower(o.tipo),
+                                   case when o.tipo in ('RETIRO', 'TRANSF_ENVIADA', 'PAGO_SERVICIO') then -o.monto
+                                        else o.monto end,
+                                   coalesce(o.descripcion, o.tipo), false, cast(null as varchar(255))
+                            from cuentas.operacion o
+                            where o.cuenta_id = :cuenta
                         ) movimientos
                         order by fecha desc, id desc
                         limit :limite offset :desplazamiento
@@ -53,10 +54,9 @@ public class LectorDeMovimientos {
                 })
                 .list();
         long total = jdbc.sql("""
-                        select (select count(*) from public.movimiento_anual m
+                        select (select count(*) from migracion.movimiento_anual m
                                 where m.cuenta_id = :cuenta and m.job_execution_id = :job)
-                             + (select count(*) from core.operacion o
-                                where o.cuenta_id = :cuenta and o.tipo = 'RETIRO')
+                             + (select count(*) from cuentas.operacion o where o.cuenta_id = :cuenta)
                         """)
                 .param("cuenta", cuentaId)
                 .param("job", jobExecutionId)
@@ -70,7 +70,7 @@ public class LectorDeMovimientos {
         return jdbc.sql("""
                         select cuenta_id, anio, cantidad_movimientos, total_depositos, total_cargos, saldo_neto,
                                primera_fecha, ultima_fecha, movimientos_con_anomalia
-                        from public.estado_cuenta_anual
+                        from migracion.estado_cuenta_anual
                         where cuenta_id = :cuenta and job_execution_id = :job
                         order by anio desc
                         """)

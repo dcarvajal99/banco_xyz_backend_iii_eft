@@ -10,7 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(schema = "core", name = "tarjeta")
+@Table(schema = "cuentas", name = "tarjeta")
 public class Tarjeta {
 
     @Id
@@ -54,6 +54,11 @@ public class Tarjeta {
         if (intentosFallidos >= maximo) {
             bloqueada = true;
         }
+    }
+
+    /** Al cerrar la cuenta sus tarjetas dejan de operar. */
+    public void bloquear() {
+        bloqueada = true;
     }
 
     public void registrarExito() {

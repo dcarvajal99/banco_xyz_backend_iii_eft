@@ -12,7 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
-class LimiteDiarioTest extends PruebaDelCore {
+class LimiteDiarioTest extends PruebaDeCuentas {
 
     @Autowired
     private ServicioDeRetiros retiros;
@@ -44,7 +44,7 @@ class LimiteDiarioTest extends PruebaDelCore {
         assertThatThrownBy(() -> retiros.retirar(999, tarjeta101, "ATM-001", "reglas-00000004", new BigDecimal("1000")))
                 .extracting("codigo").isEqualTo("CUENTA_NO_ENCONTRADA");
 
-        jdbc.sql("insert into core.tarjeta (numero_hash, ultimos4, cuenta_id, pin_hash, limite_diario) "
+        jdbc.sql("insert into cuentas.tarjeta (numero_hash, ultimos4, cuenta_id, pin_hash, limite_diario) "
                 + "values ('hash-prestamo', '1031', 103, 'x', 10000)").update();
         long tarjetaPrestamo = tarjetaDeCuenta(103);
         assertThatThrownBy(() -> retiros.retirar(103, tarjetaPrestamo, "ATM-001", "reglas-00000005", new BigDecimal("1000")))
@@ -54,7 +54,7 @@ class LimiteDiarioTest extends PruebaDelCore {
         assertThatThrownBy(() -> retiros.retirar(101, tarjeta101, "ATM-001", "reglas-00000006", new BigDecimal("2000")))
                 .extracting("codigo").isEqualTo("IDEMPOTENCIA_CONFLICTO");
 
-        jdbc.sql("update core.tarjeta set bloqueada = true where cuenta_id = 101").update();
+        jdbc.sql("update cuentas.tarjeta set bloqueada = true where cuenta_id = 101").update();
         assertThatThrownBy(() -> retiros.retirar(101, tarjeta101, "ATM-001", "reglas-00000007", new BigDecimal("1000")))
                 .extracting("codigo").isEqualTo("TARJETA_BLOQUEADA");
     }

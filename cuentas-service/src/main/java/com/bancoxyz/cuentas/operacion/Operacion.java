@@ -10,16 +10,18 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-/** Operacion en linea sobre una cuenta. Hoy solo retiros en cajero. */
+/** Movimiento en linea sobre una cuenta: retiro en cajero o un lado (debito/credito) de un pago aplicado. */
 @Entity
-@Table(schema = "core", name = "operacion")
+@Table(schema = "cuentas", name = "operacion")
 public class Operacion {
 
     public static final String TIPO_RETIRO = "RETIRO";
-    public static final String CANAL_CAJERO = "CAJERO";
     public static final String TIPO_TRANSFERENCIA_ENVIADA = "TRANSF_ENVIADA";
     public static final String TIPO_TRANSFERENCIA_RECIBIDA = "TRANSF_RECIBIDA";
-    public static final String CANAL_TRANSFERENCIAS = "TRANSFERENCIAS";
+    public static final String TIPO_DEPOSITO = "DEPOSITO";
+    public static final String TIPO_PAGO_SERVICIO = "PAGO_SERVICIO";
+    public static final String CANAL_CAJERO = "CAJERO";
+    public static final String CANAL_PAGOS = "PAGOS";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,6 +48,13 @@ public class Operacion {
     @Column(name = "terminal_id", length = 40)
     private String terminalId;
 
+    @Column(length = 120)
+    private String descripcion;
+
+    /** Id del pago en pagos-service (vacio en un retiro). */
+    @Column(length = 36)
+    private String referencia;
+
     @Column(name = "clave_idempotencia", nullable = false, length = 80)
     private String claveIdempotencia;
 
@@ -61,36 +70,48 @@ public class Operacion {
     public static Operacion retiroEnCajero(Long cuentaId, Long tarjetaId, String terminalId, BigDecimal monto,
                                            BigDecimal saldoResultante, String claveIdempotencia, String huella,
                                            LocalDateTime creadaEn) {
+        Operacion op = base(cuentaId, TIPO_RETIRO, CANAL_CAJERO, monto, saldoResultante, huella, creadaEn);
+        op.tarjetaId = tarjetaId;
+        op.terminalId = terminalId;
+        op.descripcion = "Retiro en cajero " + terminalId;
+        op.claveIdempotencia = claveIdempotencia;
+        return op;
+    }
+
+    /** Un lado de un pago. Clave = pago + tipo: el unique (canal, clave) impide aplicar dos veces el mismo lado. */
+    public static Operacion dePago(Long cuentaId, String tipo, BigDecimal monto, BigDecimal saldoResultante,
+                                   String pagoId, String descripcion, String huella, LocalDateTime creadaEn) {
+        Operacion op = base(cuentaId, tipo, CANAL_PAGOS, monto, saldoResultante, huella, creadaEn);
+        op.referencia = pagoId;
+        op.descripcion = descripcion;
+        op.claveIdempotencia = pagoId + ":" + tipo;
+        return op;
+    }
+
+    private static Operacion base(Long cuentaId, String tipo, String canal, BigDecimal monto, BigDecimal saldo,
+                                  String huella, LocalDateTime creadaEn) {
         Operacion op = new Operacion();
         op.cuentaId = cuentaId;
-        op.tarjetaId = tarjetaId;
-        op.tipo = TIPO_RETIRO;
-        op.canal = CANAL_CAJERO;
+        op.tipo = tipo;
+        op.canal = canal;
         op.monto = monto;
-        op.saldoResultante = saldoResultante;
-        op.terminalId = terminalId;
-        op.claveIdempotencia = claveIdempotencia;
+        op.saldoResultante = saldo;
         op.huellaSolicitud = huella;
         op.creadaEn = creadaEn;
         return op;
     }
 
-    /**
-     * Movimiento de una transferencia confirmada. La clave idempotente es la transferencia mas el lado (debito o
-     * credito): el {@code unique (canal, clave)} impide registrar dos veces el mismo lado.
-     */
-    public static Operacion deTransferencia(Long cuentaId, String tipo, BigDecimal monto, BigDecimal saldoResultante,
-                                            String transferenciaId, String huella, LocalDateTime creadaEn) {
-        Operacion op = new Operacion();
-        op.cuentaId = cuentaId;
-        op.tipo = tipo;
-        op.canal = CANAL_TRANSFERENCIAS;
-        op.monto = monto;
-        op.saldoResultante = saldoResultante;
-        op.claveIdempotencia = transferenciaId + (TIPO_TRANSFERENCIA_ENVIADA.equals(tipo) ? ":debito" : ":credito");
-        op.huellaSolicitud = huella;
-        op.creadaEn = creadaEn;
-        return op;
+    /** Los cargos restan saldo: retiro, transferencia enviada y pago de servicio. */
+    public boolean esCargo() {
+        return TIPO_RETIRO.equals(tipo) || TIPO_TRANSFERENCIA_ENVIADA.equals(tipo) || TIPO_PAGO_SERVICIO.equals(tipo);
+    }
+
+    public String getDescripcion() {
+        return descripcion;
+    }
+
+    public String getReferencia() {
+        return referencia;
     }
 
     public Long getId() {

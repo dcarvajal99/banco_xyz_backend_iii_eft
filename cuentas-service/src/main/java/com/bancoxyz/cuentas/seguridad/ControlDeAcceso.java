@@ -2,9 +2,6 @@ package com.bancoxyz.cuentas.seguridad;
 
 import java.util.Objects;
 
-import com.bancoxyz.cuentas.autenticacion.RepositorioUsuarios;
-import com.bancoxyz.cuentas.autenticacion.Usuario;
-import com.bancoxyz.cuentas.cliente.RepositorioClientes;
 import com.bancoxyz.cuentas.cuenta.Cuenta;
 import com.bancoxyz.cuentas.cuenta.RepositorioCuentas;
 import com.bancoxyz.cuentas.error.Errores;
@@ -13,96 +10,56 @@ import com.bancoxyz.cuentas.tarjeta.Tarjeta;
 import org.springframework.stereotype.Component;
 
 /**
- * Segunda capa de autorizacion: que usuario o tarjeta puede ver que dato.
- *
- * <p>El core confia en la identidad que le pasa un BFF autenticado (subsistema de confianza), pero
- * no en el ROL que ese BFF diga: busca el usuario por id y usa el rol de la base. Asi, aunque un BFF
- * tuviera un error, un cliente nunca ve cuentas ajenas.</p>
+ * Segunda capa de autorizacion (la primera es el scope en ConfiguracionSeguridad): que cuenta puede ver quien.
+ * Ajena o inexistente responden igual (404) para no confirmar que una cuenta existe.
  */
 @Component
 public class ControlDeAcceso {
 
-    public static final String ENCABEZADO_USUARIO = "X-Usuario-Id";
     public static final String ENCABEZADO_TARJETA = "X-Tarjeta-Id";
     public static final String ENCABEZADO_TERMINAL = "X-Terminal-Id";
 
-    private final RepositorioUsuarios usuarios;
-    private final RepositorioClientes clientes;
     private final RepositorioCuentas cuentas;
     private final RepositorioTarjetas tarjetas;
 
-    public ControlDeAcceso(RepositorioUsuarios usuarios, RepositorioClientes clientes, RepositorioCuentas cuentas,
-                           RepositorioTarjetas tarjetas) {
-        this.usuarios = usuarios;
-        this.clientes = clientes;
+    public ControlDeAcceso(RepositorioCuentas cuentas, RepositorioTarjetas tarjetas) {
         this.cuentas = cuentas;
         this.tarjetas = tarjetas;
     }
 
-    /** Usuario final propagado por el BFF web o movil. */
-    public Usuario usuario(Canal canal, String usuarioId) {
-        // banco-auth solo verifica claves: no lee cuentas.
-        if (canal == Canal.CAJERO || canal == Canal.AUTENTICACION) {
-            throw Errores.accesoDenegado();
-        }
-        long id = numero(usuarioId, ENCABEZADO_USUARIO);
-        Usuario usuario = usuarios.findById(id).filter(Usuario::isActivo).orElseThrow(Errores::accesoDenegado);
-        // La consola del ejecutivo no existe en el movil: ni siquiera un BFF movil mal configurado la abre.
-        if ((canal == Canal.MOVIL || canal == Canal.TRANSFERENCIAS) && usuario.esEjecutivo()) {
-            throw Errores.accesoDenegado();
-        }
-        return usuario;
-    }
-
-    public void exigirEjecutivo(Usuario usuario) {
-        if (!usuario.esEjecutivo()) {
-            throw Errores.accesoDenegado();
-        }
-    }
-
-    public void exigirClienteVisible(Usuario usuario, long clienteId) {
-        boolean propio = Objects.equals(usuario.getClienteId(), clienteId);
-        if ((!usuario.esEjecutivo() && !propio) || !clientes.existsById(clienteId)) {
-            throw Errores.clienteNoEncontrado();
-        }
-    }
-
-    public Cuenta cuentaVisible(Usuario usuario, long cuentaId) {
+    /** Ejecutivo y servicios ven cualquier cuenta; un cliente, solo las suyas. */
+    public Cuenta cuentaVisible(IdentidadDelToken quien, long cuentaId) {
         Cuenta cuenta = cuentas.findById(cuentaId).orElseThrow(Errores::cuentaNoEncontrada);
-        if (!usuario.esEjecutivo() && !Objects.equals(cuenta.getClienteId(), usuario.getClienteId())) {
+        if (quien.esDeUsuario() && !quien.esEjecutivo() && !Objects.equals(cuenta.getClienteId(), quien.clienteId())) {
             throw Errores.cuentaNoEncontrada();
         }
         return cuenta;
     }
 
-    /** Tarjeta y terminal propagados por el BFF cajero. */
-    public Tarjeta tarjeta(Canal canal, String tarjetaId, String terminalId) {
-        if (canal != Canal.CAJERO) {
-            throw Errores.accesoDenegado();
+    public void exigirClienteVisible(IdentidadDelToken quien, long clienteId) {
+        if (!quien.esEjecutivo() && !Objects.equals(quien.clienteId(), clienteId)) {
+            throw Errores.clienteNoEncontrado();
         }
-        long id = numero(tarjetaId, ENCABEZADO_TARJETA);
-        if (terminalId == null || terminalId.isBlank() || terminalId.length() > 40) {
-            throw Errores.identidadRequerida(ENCABEZADO_TERMINAL);
-        }
-        return tarjetas.findById(id).orElseThrow(Errores::accesoDenegado);
     }
 
-    /** El cajero solo ve la cuenta asociada a la tarjeta que se autentico. */
+    /** Tarjeta que el BFF del cajero ya autentico con PIN; el terminal queda en la operacion. */
+    public Tarjeta tarjeta(String tarjetaId, String terminalId) {
+        if (terminalId == null || terminalId.isBlank() || terminalId.length() > 40) {
+            throw Errores.identidadDeCajeroRequerida(ENCABEZADO_TERMINAL);
+        }
+        try {
+            return tarjetas.findById(Long.parseLong(String.valueOf(tarjetaId).trim()))
+                    .orElseThrow(Errores::accesoDenegado);
+        } catch (NumberFormatException e) {
+            throw Errores.identidadDeCajeroRequerida(ENCABEZADO_TARJETA);
+        }
+    }
+
+    /** El cajero solo ve la cuenta de la tarjeta autenticada. */
     public Cuenta cuentaDeTarjeta(Tarjeta tarjeta, long cuentaId) {
         if (!Objects.equals(tarjeta.getCuentaId(), cuentaId)) {
             throw Errores.cuentaNoEncontrada();
         }
         return cuentas.findById(cuentaId).orElseThrow(Errores::cuentaNoEncontrada);
-    }
-
-    private static long numero(String valor, String encabezado) {
-        if (valor == null || valor.isBlank()) {
-            throw Errores.identidadRequerida(encabezado);
-        }
-        try {
-            return Long.parseLong(valor.trim());
-        } catch (NumberFormatException e) {
-            throw Errores.identidadRequerida(encabezado);
-        }
     }
 }
