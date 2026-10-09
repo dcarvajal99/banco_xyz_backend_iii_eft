@@ -39,9 +39,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * <pre>
  *   limpieza --+-- flujoTransacciones (procesar, 3 hilos) --+
  *              +-- flujoIntereses     (procesar, 3 hilos) --+-- exportar rechazos -- [decisor]
- *              +-- flujoEstadosCuenta (procesar, 3 hilos) --+                            |
+ *              +-- flujoEstadosCuenta (procesar, 3 hilos) --+   -- conciliacion          |
  *                                                                                        |
- *        ACEPTABLE / DEGRADADA --&gt; flujoPublicacion (los tres reportes)  ----------------+
+ *        ACEPTABLE / DEGRADADA --&gt; flujoPublicacion (los tres reportes + cierre) ---------+
  *        INACEPTABLE           --&gt; cuarentena de corte --&gt; FAILED
  * </pre>
  *
@@ -63,6 +63,7 @@ public class MigracionCompletaJobConfig {
                                     @Qualifier("ejecutorDeFlujos") ThreadPoolTaskExecutor ejecutorDeFlujos,
                                     @Qualifier(Constantes.STEP_LIMPIEZA) Step limpiezaDeReintentoStep,
                                     @Qualifier(Constantes.STEP_EXPORTAR_RECHAZADOS) Step exportarRechazadosStep,
+                                    @Qualifier(Constantes.STEP_CONCILIACION) Step conciliacionStep,
                                     @Qualifier(Constantes.STEP_CUARENTENA_AVISO) Step cuarentenaAvisoStep,
                                     @Qualifier(Constantes.STEP_CUARENTENA_CORTE) Step cuarentenaCorteStep,
                                     Step procesarTransaccionesStep,
@@ -70,7 +71,8 @@ public class MigracionCompletaJobConfig {
                                     Step procesarInteresesStep,
                                     Step generarResumenInteresesStep,
                                     Step procesarMovimientosAnualesStep,
-                                    Step compilarEstadosCuentaStep) {
+                                    Step compilarEstadosCuentaStep,
+                                    Step publicarCierreStep) {
 
         Flow flujoTransacciones = new FlowBuilder<Flow>("flujoTransacciones")
                 .start(procesarTransaccionesStep)
@@ -96,6 +98,7 @@ public class MigracionCompletaJobConfig {
                 .start(limpiezaDeReintentoStep)
                 .next(flujoMigracionParalela)
                 .next(exportarRechazadosStep)
+                .next(conciliacionStep)
                 .build();
 
         // Los reportes se compilan sobre lo ya persistido; van en serie porque los tres
@@ -104,6 +107,7 @@ public class MigracionCompletaJobConfig {
                 .start(generarResumenDiarioStep)
                 .next(generarResumenInteresesStep)
                 .next(compilarEstadosCuentaStep)
+                .next(publicarCierreStep)
                 .build();
 
         return new JobBuilder(Constantes.JOB_MIGRACION_COMPLETA, jobRepository)

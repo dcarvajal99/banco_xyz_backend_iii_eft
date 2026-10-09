@@ -16,6 +16,7 @@ import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
 import org.springframework.boot.DefaultApplicationArguments;
 
 import java.nio.file.Files;
@@ -25,6 +26,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -54,8 +56,20 @@ class LanzadorDeJobsTest {
     private JobExplorer jobExplorer;
 
     private LanzadorDeJobs lanzador() {
+        return lanzador(0);
+    }
+
+    /** Sin espera entre reejecuciones: la prueba no necesita que el fallo "pase". */
+    private LanzadorDeJobs lanzador(int reejecuciones) {
+        PropiedadesBatch propiedades = new PropiedadesBatch();
+        propiedades.setReejecucionesAutomaticas(reejecuciones);
+        propiedades.setEsperaReejecucionMs(0);
         return new LanzadorDeJobs(jobLauncher, jobExplorer,
-                Map.of(Constantes.JOB_TRANSACCIONES_DIARIAS, jobTransacciones), new PropiedadesBatch());
+                Map.of(Constantes.JOB_TRANSACCIONES_DIARIAS, jobTransacciones), propiedades);
+    }
+
+    private String[] argumentos(Path salida) {
+        return new String[] {"--job=transacciones", "--entrada=" + ENTRADA, "--salida=" + salida, "--corrida=fija"};
     }
 
     @Test
@@ -122,5 +136,65 @@ class LanzadorDeJobsTest {
                 "--job=transacciones", "--entrada=" + ENTRADA, "--salida=" + salida));
 
         assertThat(lanzador.getExitCode()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Fallo tecnico: el lanzador reejecuta solo la MISMA instancia y termina bien")
+    void reejecutaSoloUnFalloTecnico(@TempDir Path salida) throws Exception {
+        JobExecution fallida = new JobExecution(1L);
+        fallida.setStatus(BatchStatus.FAILED);
+        JobExecution buena = new JobExecution(2L);
+        buena.setStatus(BatchStatus.COMPLETED);
+        when(jobLauncher.run(eq(jobTransacciones), any())).thenReturn(fallida, buena);
+
+        LanzadorDeJobs lanzador = lanzador(2);
+        lanzador.run(new DefaultApplicationArguments(argumentos(salida)));
+
+        ArgumentCaptor<JobParameters> captor = ArgumentCaptor.forClass(JobParameters.class);
+        verify(jobLauncher, times(2)).run(eq(jobTransacciones), captor.capture());
+        assertThat(captor.getAllValues().get(1)).isEqualTo(captor.getAllValues().get(0));
+        assertThat(lanzador.getExitCode()).isZero();
+    }
+
+    @Test
+    @DisplayName("Fallo tecnico persistente: se agotan las reejecuciones y sale con codigo 1")
+    void agotaLasReejecuciones(@TempDir Path salida) throws Exception {
+        JobExecution fallida = new JobExecution(1L);
+        fallida.setStatus(BatchStatus.FAILED);
+        when(jobLauncher.run(eq(jobTransacciones), any())).thenReturn(fallida);
+
+        LanzadorDeJobs lanzador = lanzador(2);
+        lanzador.run(new DefaultApplicationArguments(argumentos(salida)));
+
+        verify(jobLauncher, times(3)).run(eq(jobTransacciones), any());
+        assertThat(lanzador.getExitCode()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Revision manual (calidad o conciliacion): no se reejecuta y sale con codigo 3")
+    void noReejecutaLaRevisionManual(@TempDir Path salida) throws Exception {
+        JobExecution derivada = new JobExecution(1L);
+        derivada.setStatus(BatchStatus.FAILED);
+        derivada.getExecutionContext().putString(Constantes.CTX_REVISION_MANUAL, "Tasa de omision 50%");
+        when(jobLauncher.run(eq(jobTransacciones), any())).thenReturn(derivada);
+
+        LanzadorDeJobs lanzador = lanzador(2);
+        lanzador.run(new DefaultApplicationArguments(argumentos(salida)));
+
+        verify(jobLauncher, times(1)).run(eq(jobTransacciones), any());
+        assertThat(lanzador.getExitCode()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Una corrida que ya termino COMPLETED no se vuelve a migrar y sale con codigo 0")
+    void noRepiteUnaCorridaCompleta(@TempDir Path salida) throws Exception {
+        when(jobLauncher.run(eq(jobTransacciones), any()))
+                .thenThrow(new JobInstanceAlreadyCompleteException("ya completa"));
+
+        LanzadorDeJobs lanzador = lanzador(2);
+        lanzador.run(new DefaultApplicationArguments(argumentos(salida)));
+
+        verify(jobLauncher, times(1)).run(eq(jobTransacciones), any());
+        assertThat(lanzador.getExitCode()).isZero();
     }
 }

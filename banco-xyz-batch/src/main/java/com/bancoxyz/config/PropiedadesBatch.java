@@ -150,6 +150,25 @@ public class PropiedadesBatch {
      */
     private boolean simularFalloTransitorio = false;
 
+    /**
+     * Simula un fallo critico: toda escritura de la PRIMERA ejecucion de Job que llega al escritor
+     * falla con un error de base de datos, se agotan los reintentos y el Job termina FAILED. Sirve
+     * para evidenciar la reejecucion automatica del lanzador. Solo para demostraciones y pruebas.
+     */
+    private boolean simularFalloCritico = false;
+
+    /* --------------------------------------------- Reejecucion automatica */
+
+    /**
+     * Cuantas veces el lanzador vuelve a ejecutar por su cuenta una corrida que termino FAILED por un
+     * fallo tecnico (la misma JobInstance: retoma, no empieza de cero). Nunca reejecuta una corrida
+     * que el decisor derivo a revision manual: ese fallo no se arregla reintentando. 0 la desactiva.
+     */
+    private int reejecucionesAutomaticas = 2;
+
+    /** Espera antes de cada reejecucion automatica, para que el fallo transitorio alcance a pasar. */
+    private long esperaReejecucionMs = 5000;
+
     /* ------------------------------------------------------------- Accesores */
 
     public int getTamanoChunk() {
@@ -327,5 +346,29 @@ public class PropiedadesBatch {
 
     public void setSimularFalloTransitorio(boolean simularFalloTransitorio) {
         this.simularFalloTransitorio = simularFalloTransitorio;
+    }
+
+    public boolean isSimularFalloCritico() {
+        return simularFalloCritico;
+    }
+
+    public void setSimularFalloCritico(boolean simularFalloCritico) {
+        this.simularFalloCritico = simularFalloCritico;
+    }
+
+    public int getReejecucionesAutomaticas() {
+        return reejecucionesAutomaticas;
+    }
+
+    public void setReejecucionesAutomaticas(int reejecucionesAutomaticas) {
+        this.reejecucionesAutomaticas = reejecucionesAutomaticas;
+    }
+
+    public long getEsperaReejecucionMs() {
+        return esperaReejecucionMs;
+    }
+
+    public void setEsperaReejecucionMs(long esperaReejecucionMs) {
+        this.esperaReejecucionMs = esperaReejecucionMs;
     }
 }

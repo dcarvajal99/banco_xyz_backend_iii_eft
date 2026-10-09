@@ -170,7 +170,7 @@ class EscalamientoParaleloIT {
     @Test
     @DisplayName("La deduplicacion ve el archivo completo aunque las copias caigan en particiones distintas")
     void deduplicaEntreParticiones(@TempDir Path salida) throws Exception {
-        // La primera y la ultima fila de intereses.csv son identicas. Con cuatro particiones
+        // La primera y la ultima fila de intereses_trimestrales.csv son identicas. Con cuatro particiones
         // caen en la primera y en la ultima, de modo que ninguna particion ve las dos. Si el
         // estado de deduplicacion viviera dentro de cada particion —como ocurria cuando era un
         // campo del ItemProcessor @StepScope— las dos se darian por buenas y la cuenta 9000 se

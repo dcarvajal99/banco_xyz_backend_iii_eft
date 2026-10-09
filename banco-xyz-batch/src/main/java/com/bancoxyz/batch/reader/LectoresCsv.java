@@ -94,19 +94,19 @@ public final class LectoresCsv {
         return inicio == null || fin == null ? Rango.archivoCompleto() : new Rango(inicio, fin);
     }
 
-    /** Lector de {@code transacciones.csv} (id, fecha, monto, tipo). */
+    /** Lector de {@code movimientos_financieros_diarios.csv} (id, fecha, monto, tipo). */
     public static FlatFileItemReader<TransaccionCsv> deTransacciones(Path archivo, Rango rango) {
         return construir("lectorTransacciones", archivo, TransaccionCsv.class,
                 new String[]{"id", "fecha", "monto", "tipo"}, rango);
     }
 
-    /** Lector de {@code intereses.csv} (cuenta_id, nombre, saldo, edad, tipo). */
+    /** Lector de {@code intereses_trimestrales.csv} (cuenta_id, nombre, saldo, edad, tipo). */
     public static FlatFileItemReader<InteresCsv> deIntereses(Path archivo, Rango rango) {
         return construir("lectorIntereses", archivo, InteresCsv.class,
                 new String[]{"cuentaId", "nombre", "saldo", "edad", "tipo"}, rango);
     }
 
-    /** Lector de {@code cuentas_anuales.csv} (cuenta_id, fecha, transaccion, monto, descripcion). */
+    /** Lector de {@code estados_financieros_anuales.csv} (cuenta_id, fecha, transaccion, monto, descripcion). */
     public static FlatFileItemReader<MovimientoAnualCsv> deMovimientosAnuales(Path archivo, Rango rango) {
         return construir("lectorMovimientosAnuales", archivo, MovimientoAnualCsv.class,
                 new String[]{"cuentaId", "fecha", "transaccion", "monto", "descripcion"}, rango);

@@ -1,5 +1,7 @@
 package com.bancoxyz.batch.tasklet;
 
+import com.bancoxyz.repository.CierreCuentaRepository;
+import com.bancoxyz.repository.ConciliacionRepository;
 import com.bancoxyz.repository.CuentaInteresRepository;
 import com.bancoxyz.repository.EstadoCuentaAnualRepository;
 import com.bancoxyz.repository.MovimientoAnualRepository;
@@ -58,6 +60,8 @@ public class LimpiezaDeReintentoTasklet implements Tasklet {
     private final MovimientoAnualRepository movimientos;
     private final EstadoCuentaAnualRepository estados;
     private final RegistroRechazadoRepository rechazados;
+    private final CierreCuentaRepository cierres;
+    private final ConciliacionRepository conciliaciones;
 
     public LimpiezaDeReintentoTasklet(JobExplorer jobExplorer,
                                       TransaccionRepository transacciones,
@@ -65,7 +69,9 @@ public class LimpiezaDeReintentoTasklet implements Tasklet {
                                       CuentaInteresRepository cuentas,
                                       MovimientoAnualRepository movimientos,
                                       EstadoCuentaAnualRepository estados,
-                                      RegistroRechazadoRepository rechazados) {
+                                      RegistroRechazadoRepository rechazados,
+                                      CierreCuentaRepository cierres,
+                                      ConciliacionRepository conciliaciones) {
         this.jobExplorer = jobExplorer;
         this.transacciones = transacciones;
         this.resumenes = resumenes;
@@ -73,6 +79,8 @@ public class LimpiezaDeReintentoTasklet implements Tasklet {
         this.movimientos = movimientos;
         this.estados = estados;
         this.rechazados = rechazados;
+        this.cierres = cierres;
+        this.conciliaciones = conciliaciones;
     }
 
     @Override
@@ -96,7 +104,10 @@ public class LimpiezaDeReintentoTasklet implements Tasklet {
                 + cuentas.deleteByJobExecutionIdIn(ejecucionesPrevias)
                 + movimientos.deleteByJobExecutionIdIn(ejecucionesPrevias)
                 + estados.deleteByJobExecutionIdIn(ejecucionesPrevias)
-                + rechazados.deleteByJobExecutionIdIn(ejecucionesPrevias);
+                + rechazados.deleteByJobExecutionIdIn(ejecucionesPrevias)
+                // El maestro de clientes NO se limpia: sus ids tienen que sobrevivir a la reanudacion.
+                + cierres.deleteByJobExecutionIdIn(ejecucionesPrevias)
+                + conciliaciones.deleteByJobExecutionIdIn(ejecucionesPrevias);
 
         log.warn("Limpieza previa: se reanuda la instancia {} (ejecuciones anteriores {}). "
                         + "Se borraron {} filas del intento anterior para que la migracion sea idempotente.",

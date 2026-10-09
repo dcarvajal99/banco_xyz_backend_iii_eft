@@ -132,6 +132,8 @@ public class DecisorCalidadDeDatos implements JobExecutionDecider {
         jobExecution.getExecutionContext().putString(Constantes.CTX_MOTIVO_CALIDAD, motivo);
 
         if (Constantes.CALIDAD_INACEPTABLE.equals(veredicto)) {
+            // Reintentar no mejora un archivo sucio: la corrida espera a que el area de datos lo corrija.
+            jobExecution.getExecutionContext().putString(Constantes.CTX_REVISION_MANUAL, motivo);
             log.error("Decisor de calidad -> {} | {}", veredicto, motivo);
         } else if (Constantes.CALIDAD_DEGRADADA.equals(veredicto)) {
             log.warn("Decisor de calidad -> {} | {}", veredicto, motivo);

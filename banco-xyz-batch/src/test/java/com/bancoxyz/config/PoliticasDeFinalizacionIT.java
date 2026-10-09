@@ -45,7 +45,7 @@ class PoliticasDeFinalizacionIT {
     private static final Path CALIDAD_BUENA = Path.of("src", "test", "resources", "data", "calidad_buena");
     private static final Path CALIDAD_DEGRADADA = Path.of("src", "test", "resources", "data", "calidad_degradada");
     private static final Path CALIDAD_MALA = Path.of("src", "test", "resources", "data", "calidad_mala");
-    /** transacciones.csv con solo la cabecera: el archivo llego, pero llego truncado. */
+    /** movimientos_financieros_diarios.csv con solo la cabecera: el archivo llego, pero llego truncado. */
     private static final Path TRUNCADO = Path.of("src", "test", "resources", "data", "truncado");
 
     @Autowired

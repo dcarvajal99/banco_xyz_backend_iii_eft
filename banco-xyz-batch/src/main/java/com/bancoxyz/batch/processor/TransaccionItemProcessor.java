@@ -19,7 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Valida, corrige y clasifica cada fila de {@code transacciones.csv} (Job 1).
+ * Valida, corrige y clasifica cada fila de {@code movimientos_financieros_diarios.csv} (Job 1).
  *
  * <p>Distingue dos situaciones que el sistema legacy trataba igual:</p>
  * <ul>

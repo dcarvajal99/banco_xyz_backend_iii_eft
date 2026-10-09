@@ -70,6 +70,14 @@ public class CuentaInteres {
     @Column(name = "job_execution_id", nullable = false)
     private Long jobExecutionId;
 
+    /**
+     * Linea del archivo de la que salio la fila. Con particiones el orden de escritura no es el del
+     * archivo, asi que es esta columna, y no el id, la que permite elegir de forma determinista la
+     * primera aparicion de una cuenta repetida al publicar el cierre.
+     */
+    @Column(name = "linea_origen", nullable = false)
+    private int lineaOrigen;
+
     @Column(name = "procesado_en", nullable = false)
     private LocalDateTime procesadoEn = LocalDateTime.now();
 
@@ -174,6 +182,14 @@ public class CuentaInteres {
 
     public void setJobExecutionId(Long jobExecutionId) {
         this.jobExecutionId = jobExecutionId;
+    }
+
+    public int getLineaOrigen() {
+        return lineaOrigen;
+    }
+
+    public void setLineaOrigen(int lineaOrigen) {
+        this.lineaOrigen = lineaOrigen;
     }
 
     public LocalDateTime getProcesadoEn() {

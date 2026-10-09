@@ -7,7 +7,9 @@ import com.bancoxyz.common.Constantes;
 import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.job.builder.FlowBuilder;
 import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.job.flow.Flow;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -23,7 +25,7 @@ import org.springframework.stereotype.Component;
  *
  * <h2>El flujo</h2>
  * <pre>
- *   limpieza -&gt; migrar -&gt; exportar rechazos -&gt; [decisor de calidad]
+ *   limpieza -&gt; migrar -&gt; exportar rechazos -&gt; conciliacion -&gt; [decisor de calidad]
  *                                                  |
  *          CALIDAD_ACEPTABLE  ---------------------+--&gt; publicar reporte --&gt; COMPLETED
  *          CALIDAD_DEGRADADA  --&gt; cuarentena aviso ---&gt; publicar reporte --&gt; COMPLETED
@@ -60,6 +62,7 @@ public class ArmadorDeJobs {
     private final DecisorCalidadDeDatos decisor;
     private final Step limpiezaDeReintentoStep;
     private final Step exportarRechazadosStep;
+    private final Step conciliacionStep;
     private final Step cuarentenaAvisoStep;
     private final Step cuarentenaCorteStep;
 
@@ -69,6 +72,7 @@ public class ArmadorDeJobs {
                          DecisorCalidadDeDatos decisor,
                          @Qualifier(Constantes.STEP_LIMPIEZA) Step limpiezaDeReintentoStep,
                          @Qualifier(Constantes.STEP_EXPORTAR_RECHAZADOS) Step exportarRechazadosStep,
+                         @Qualifier(Constantes.STEP_CONCILIACION) Step conciliacionStep,
                          @Qualifier(Constantes.STEP_CUARENTENA_AVISO) Step cuarentenaAvisoStep,
                          @Qualifier(Constantes.STEP_CUARENTENA_CORTE) Step cuarentenaCorteStep) {
         this.jobRepository = jobRepository;
@@ -77,6 +81,7 @@ public class ArmadorDeJobs {
         this.decisor = decisor;
         this.limpiezaDeReintentoStep = limpiezaDeReintentoStep;
         this.exportarRechazadosStep = exportarRechazadosStep;
+        this.conciliacionStep = conciliacionStep;
         this.cuarentenaAvisoStep = cuarentenaAvisoStep;
         this.cuarentenaCorteStep = cuarentenaCorteStep;
     }
@@ -84,15 +89,21 @@ public class ArmadorDeJobs {
     /**
      * @param nombre nombre del Job
      * @param migrar Step orientado a chunk que lee el archivo legacy
-     * @param publicar Step que compila y publica el reporte del proceso
+     * @param publicacion Steps que compilan y publican el resultado, en orden (el primero que falla corta)
      */
-    public Job jobDeMigracion(String nombre, Step migrar, Step publicar) {
+    public Job jobDeMigracion(String nombre, Step migrar, Step... publicacion) {
+        FlowBuilder<Flow> flujo = new FlowBuilder<Flow>(nombre + ".publicacion").start(publicacion[0]);
+        for (int i = 1; i < publicacion.length; i++) {
+            flujo.next(publicacion[i]);
+        }
+        Flow publicar = flujo.build();
         return new JobBuilder(nombre, jobRepository)
                 .listener(resumenJobListener)
                 .listener(registroDeDuplicados)
                 .start(limpiezaDeReintentoStep)
                 .next(migrar)
                 .next(exportarRechazadosStep)
+                .next(conciliacionStep)
                 .next(decisor)
                 .on(Constantes.CALIDAD_ACEPTABLE).to(publicar)
                 .from(decisor).on(Constantes.CALIDAD_DEGRADADA).to(cuarentenaAvisoStep)

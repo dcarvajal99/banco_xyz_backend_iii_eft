@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * cada uno arranca con sus mapas vacios. Un duplicado repartido entre dos particiones —la fila
  * 100 en la particion 0 y su copia en la fila 800, en la particion 2— dejaria de detectarse: las
  * dos particiones verian su clave por primera vez y las dos la darian por buena. En
- * {@code intereses.csv} eso significa liquidar dos veces la misma cuenta, que es un error
+ * {@code intereses_trimestrales.csv} eso significa liquidar dos veces la misma cuenta, que es un error
  * contable, no un detalle.</p>
  *
  * <h2>Por que es un singleton y no un bean {@code @JobScope}</h2>
@@ -80,7 +80,7 @@ public class RegistroDeDuplicados implements JobExecutionListener {
     public boolean primeraVezEnBitacora(Long jobExecutionId, String archivo, int numeroLinea) {
         // La clave incluye el archivo y no solo la linea porque el cierre nocturno completo
         // procesa los tres archivos dentro de la misma corrida: sin el archivo, la linea 42 de
-        // transacciones.csv taparia a la linea 42 de intereses.csv.
+        // movimientos_financieros_diarios.csv taparia a la linea 42 de intereses_trimestrales.csv.
         return estado(jobExecutionId).yaEnBitacora().add(archivo + ":" + numeroLinea);
     }
 

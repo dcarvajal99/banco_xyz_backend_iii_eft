@@ -158,7 +158,8 @@ public class ConstructorDePasos {
                 // candado por nada en el camino critico.
                 .reader(multihilo ? LectoresCsv.sincronizado(lector) : lector)
                 .processor(procesador)
-                .writer(new EscritorConFalloSimulado<>(escritor, propiedades.isSimularFalloTransitorio()))
+                .writer(new EscritorConFalloSimulado<>(escritor, propiedades.isSimularFalloTransitorio(),
+                        propiedades.isSimularFalloCritico()))
                 .faultTolerant()
                 // Omision: solo el dato sucio, y con tope. Ver PoliticaOmisionBancaria.
                 .skipPolicy(new PoliticaOmisionBancaria(propiedades.getLimiteOmisiones()))

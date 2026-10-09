@@ -1,5 +1,6 @@
 package com.bancoxyz.config;
 
+import com.bancoxyz.batch.tasklet.ConciliacionTasklet;
 import com.bancoxyz.batch.tasklet.CuarentenaCalidadTasklet;
 import com.bancoxyz.batch.tasklet.ExportarRechazadosTasklet;
 import com.bancoxyz.batch.tasklet.LimpiezaDeReintentoTasklet;
@@ -46,6 +47,15 @@ public class PasosComunesConfig {
     @Bean
     public Step exportarRechazadosStep(ExportarRechazadosTasklet exportarRechazadosTasklet) {
         return constructor.pasoDeTarea(Constantes.STEP_EXPORTAR_RECHAZADOS, exportarRechazadosTasklet);
+    }
+
+    /**
+     * Totales de control de cada archivo contra lo migrado. Va despues de exportar la bitacora (para
+     * que la evidencia exista aunque no cuadre) y antes del decisor: sin integridad no hay publicacion.
+     */
+    @Bean
+    public Step conciliacionStep(ConciliacionTasklet conciliacionTasklet) {
+        return constructor.pasoDeTarea(Constantes.STEP_CONCILIACION, conciliacionTasklet);
     }
 
     /** Rama del decisor para calidad degradada: avisa y la corrida sigue hasta publicar. */

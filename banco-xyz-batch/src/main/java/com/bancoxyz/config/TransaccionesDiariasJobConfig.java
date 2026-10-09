@@ -27,7 +27,7 @@ import java.nio.file.Path;
  * Job 1 — Reporte de transacciones diarias.
  *
  * <p>Reemplaza el proceso COBOL que cada noche listaba los movimientos del dia. El flujo
- * es: migrar {@code transacciones.csv} detectando anomalias, compilar el resumen por dia
+ * es: migrar {@code movimientos_financieros_diarios.csv} detectando anomalias, compilar el resumen por dia
  * y exportar la bitacora de lo que quedo fuera.</p>
  *
  * <p>Desde la semana 2 el paso de migracion corre en paralelo (tres hilos, chunks de cinco)

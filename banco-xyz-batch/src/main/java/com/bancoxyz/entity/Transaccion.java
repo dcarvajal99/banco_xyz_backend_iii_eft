@@ -35,7 +35,7 @@ public class Transaccion {
     @SequenceGenerator(name = "transaccion_seq", sequenceName = "transaccion_seq", allocationSize = 50)
     private Long id;
 
-    /** Identificador que traia la fila en {@code transacciones.csv}. */
+    /** Identificador que traia la fila en {@code movimientos_financieros_diarios.csv}. */
     @NotNull
     @Column(name = "id_origen", nullable = false)
     private Long idOrigen;

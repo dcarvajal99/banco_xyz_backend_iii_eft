@@ -14,6 +14,9 @@ public interface CuentaInteresRepository extends JpaRepository<CuentaInteres, Lo
 
     long countByJobExecutionId(Long jobExecutionId);
 
+    /** Todas las filas de la ejecucion en el orden del archivo, para elegir la canonica de cada cuenta. */
+    java.util.List<CuentaInteres> findByJobExecutionIdOrderByCuentaIdAscLineaOrigenAsc(Long jobExecutionId);
+
     /**
      * Borra lo que dejo una ejecucion anterior de la misma JobInstance.
      * Lo usa {@code LimpiezaDeReintentoTasklet} para que reanudar una corrida no deje

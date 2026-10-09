@@ -37,6 +37,10 @@ public final class Constantes {
     public static final String STEP_CUARENTENA_AVISO = "cuarentenaAvisoStep";
     /** Rama del decisor cuando la calidad es inaceptable: avisa y corta la corrida. */
     public static final String STEP_CUARENTENA_CORTE = "cuarentenaCorteStep";
+    /** Cuadra los totales de control de cada archivo contra lo migrado; si no cuadran, corta. */
+    public static final String STEP_CONCILIACION = "conciliacionStep";
+    /** Publica el cierre: una fila por cuenta y el maestro de clientes con ids estables. */
+    public static final String STEP_PUBLICAR_CIERRE = "publicarCierreStep";
 
     /* ------------------------------------------------------- Particionado */
 
@@ -87,6 +91,11 @@ public final class Constantes {
     public static final String CTX_TASA_OMISION = "banco.tasaOmision";
     /** Veredicto del decisor, para que el paso de cuarentena lo pueda informar. */
     public static final String CTX_VEREDICTO_CALIDAD = "banco.veredictoCalidad";
+    /**
+     * Marca que deja en el contexto del Job un fallo que NO se arregla reintentando (calidad
+     * inaceptable, conciliacion que no cuadra): el lanzador no la reejecuta sola y sale con codigo 3.
+     */
+    public static final String CTX_REVISION_MANUAL = "banco.revisionManual";
     /** Por que el decisor resolvio lo que resolvio, en texto legible para el operador. */
     public static final String CTX_MOTIVO_CALIDAD = "banco.motivoCalidad";
 
@@ -101,9 +110,9 @@ public final class Constantes {
 
     /* ------------------------------------------------------- Archivos legacy */
 
-    public static final String ARCHIVO_TRANSACCIONES = "transacciones.csv";
-    public static final String ARCHIVO_INTERESES = "intereses.csv";
-    public static final String ARCHIVO_CUENTAS_ANUALES = "cuentas_anuales.csv";
+    public static final String ARCHIVO_TRANSACCIONES = "movimientos_financieros_diarios.csv";
+    public static final String ARCHIVO_INTERESES = "intereses_trimestrales.csv";
+    public static final String ARCHIVO_CUENTAS_ANUALES = "estados_financieros_anuales.csv";
 
     /* ------------------------------------------------------ Archivos de salida */
 
@@ -112,16 +121,20 @@ public final class Constantes {
     public static final String SALIDA_ESTADOS_CUENTA = "estados_cuenta_anuales.csv";
     /** Aviso que deja el paso de cuarentena cuando la calidad del origen es insuficiente. */
     public static final String SALIDA_CUARENTENA = "cuarentena_calidad.txt";
+    /** Totales de control de cada archivo contra lo migrado. */
+    public static final String SALIDA_CONCILIACION = "conciliacion.csv";
+    /** Cierre publicado: una fila por cuenta, con su cliente. */
+    public static final String SALIDA_CIERRE = "cierre_publicado.csv";
 
     /* ---------------------------------------------------- Catalogos de valores */
 
-    /** Tipos validos en {@code transacciones.csv}. Cualquier otro valor es dato sucio. */
+    /** Tipos validos en {@code movimientos_financieros_diarios.csv}. Cualquier otro valor es dato sucio. */
     public static final List<String> TIPOS_TRANSACCION = List.of("debito", "credito");
 
-    /** Tipos de cuenta validos en {@code intereses.csv}. El valor {@code -1} es dato sucio. */
+    /** Tipos de cuenta validos en {@code intereses_trimestrales.csv}. El valor {@code -1} es dato sucio. */
     public static final List<String> TIPOS_CUENTA = List.of("ahorro", "prestamo", "hipoteca");
 
-    /** Tipos de movimiento validos en {@code cuentas_anuales.csv}. */
+    /** Tipos de movimiento validos en {@code estados_financieros_anuales.csv}. */
     public static final List<String> TIPOS_MOVIMIENTO = List.of("deposito", "retiro", "compra", "pago");
 
     /** Movimientos que restan saldo: el monto se normaliza a signo negativo. */
@@ -135,6 +148,9 @@ public final class Constantes {
     public static final int EDAD_MAXIMA = 99;
     /** Edad a partir de la cual una cuenta de ahorro recibe la bonificacion de tercera edad. */
     public static final int EDAD_TERCERA_EDAD = 60;
+
+    /** Titular de una cuenta cuyo nombre viene vacio o como "unknown" en el archivo legacy. */
+    public static final String TITULAR_SIN_IDENTIFICAR = "Sin identificar";
 
     /** Texto con el que se completa una descripcion vacia (enriquecimiento de datos). */
     public static final String DESCRIPCION_POR_DEFECTO = "Sin descripcion";

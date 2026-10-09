@@ -3,7 +3,7 @@
 """
 Genera los juegos de datos de volumen que usa la medicion de rendimiento.
 
-Los archivos de bank_legacy_data traen 1.000 filas, y una corrida sobre ellos dura menos de
+Los archivos de fin_legacy_data traen 1.000 filas, y una corrida sobre ellos dura menos de
 un segundo. A esa escala el arranque de la JVM, el calentamiento del contenedor y el ruido del
 sistema operativo pesan mas que la diferencia entre estrategias: la medicion de la semana 2
 llego a tener una dispersion de 2,5x entre la muestra mas rapida y la mas lenta de una MISMA
@@ -20,7 +20,7 @@ import os
 import sys
 
 ORIGEN = 'data/semana_3'
-ARCHIVOS = ['transacciones.csv', 'intereses.csv', 'cuentas_anuales.csv']
+ARCHIVOS = ['movimientos_financieros_diarios.csv', 'intereses_trimestrales.csv', 'estados_financieros_anuales.csv']
 
 
 def desplazar(linea, bloque):

@@ -31,7 +31,7 @@ import java.util.stream.Stream;
  *   <li><b>Por clave de negocio</b> (por ejemplo {@code cuenta_id % gridSize}) tiene la ventaja
  *       de que todas las filas de una cuenta caen en la misma particion, pero exige leer el
  *       archivo entero antes de repartir y produce particiones desiguales: en
- *       {@code intereses.csv} de {@code semana_3} hay 1.000 filas repartidas en solo 50 cuentas,
+ *       {@code intereses_trimestrales.csv} de {@code semana_3} hay 1.000 filas repartidas en solo 50 cuentas,
  *       de modo que unas particiones quedarian con el triple de trabajo que otras.</li>
  *   <li><b>Por rangos de filas</b> reparte exactamente el mismo numero de filas a cada
  *       particion, que es lo que hace que el tiempo total sea el de la particion mas lenta y no

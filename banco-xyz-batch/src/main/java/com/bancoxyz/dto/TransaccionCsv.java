@@ -1,7 +1,7 @@
 package com.bancoxyz.dto;
 
 /**
- * Fila cruda de {@code transacciones.csv} tal como sale del sistema legacy.
+ * Fila cruda de {@code movimientos_financieros_diarios.csv} tal como sale del sistema legacy.
  *
  * <p>Todos los campos son {@code String} a proposito: si el DTO de lectura ya exigiera
  * tipos, el {@code ItemReader} reventaria en la fila 4 y perderiamos la trazabilidad del

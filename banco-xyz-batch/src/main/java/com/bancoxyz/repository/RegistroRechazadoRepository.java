@@ -16,6 +16,8 @@ public interface RegistroRechazadoRepository extends JpaRepository<RegistroRecha
 
     long countByJobExecutionIdAndClasificacion(Long jobExecutionId, String clasificacion);
 
+    long countByJobExecutionIdAndArchivo(Long jobExecutionId, String archivo);
+
     /**
      * Borra lo que dejo una ejecucion anterior de la misma JobInstance.
      * Lo usa {@code LimpiezaDeReintentoTasklet} para que reanudar una corrida no deje

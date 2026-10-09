@@ -17,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Normaliza cada movimiento de {@code cuentas_anuales.csv} (Job 3).
+ * Normaliza cada movimiento de {@code estados_financieros_anuales.csv} (Job 3).
  *
  * <p>La correccion mas importante es el <b>signo del monto</b>: el sistema legacy escribia
  * los retiros a veces en positivo y a veces en negativo, de modo que sumar la columna daba

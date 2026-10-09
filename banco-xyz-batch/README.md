@@ -1,25 +1,44 @@
-# Banco XYZ — Escalado por particiones con Spring Batch
+# Banco XYZ — Migración batch con Spring Batch
 
-## En la semana 6
+## En la EFT (semana 9)
 
-En `banco-xyz-microservicios` este módulo es uno de los seis proyectos independientes: conserva el
-código y el `pom.xml` (parent propio) de la semana 3, sin cambios de lógica, y trae su propio `mvnw`. Sigue siendo un
-**Job por lotes**, no un servicio: no importa configuración del Config Server ni se registra en Eureka.
+Primera pieza del ecosistema de la Evaluación Final: migra **`fin_legacy_data`**
+(<https://github.com/KariVillagran/fin_legacy_data>) y deja la **capa de datos** que leen los microservicios.
 
-Lo que sí cambió es dónde escribe. `spring.datasource.url` apunta a la base de la semana 6
-(PostgreSQL 17, contenedor `banco-xyz-db-s6`, puerto `5438`), levantada con `docker compose up -d` desde
-`banco-xyz-cloud/`. El resultado lo lee luego `banco-core-api`, que abre en su propio esquema las cuentas
-del cierre publicado.
+| Proceso legacy | Archivo | Job |
+|---|---|---|
+| Reporte de Transacciones Diarias | `movimientos_financieros_diarios.csv` | `reporteTransaccionesDiariasJob` (`--job=transacciones`) |
+| Cálculo de Intereses Mensuales | `intereses_trimestrales.csv` | `calculoInteresesMensualesJob` (`--job=intereses`) |
+| Estados de Cuenta Anuales | `estados_financieros_anuales.csv` | `estadosCuentaAnualesJob` (`--job=estados`) |
+| Cierre nocturno: los tres en paralelo | los tres | `migracionCompletaJob` (`--job=completa`) |
 
-Orden de arranque del ecosistema: base → batch → core.
+Lo que se agregó sobre las semanas 1 a 6:
+
+- **Esquema `migracion`.** Las tablas de la migración van a su propio esquema (los metadatos `BATCH_*` quedan en
+  `public`). Los microservicios lo leen; no escriben en él.
+- **Conciliación de totales de control** (`conciliacionStep`, antes del decisor). Para cada archivo: líneas del archivo =
+  leídas; leídas = migradas + filtradas + omitidas; migradas = filas en la tabla; rechazos = filas en la bitácora. Si no
+  cuadra, la corrida no se publica y queda para revisión manual. Resultado en `migracion.conciliacion` y `conciliacion.csv`.
+- **Cierre publicado** (`publicarCierreStep`, último paso de intereses): una fila por cuenta en `migracion.cierre_cuenta`
+  (la primera aparición en el archivo) y el **maestro de clientes con ids estables** `migracion.cliente_migrado`.
+  clientes-service y cuentas-service copian de ahí sin llamarse entre sí, y `cuenta.cliente_id` coincide en ambos.
+- **Reejecución automática.** Una corrida que termina FAILED por un fallo técnico se reejecuta sola sobre la misma
+  JobInstance (hasta `banco.batch.reejecuciones-automaticas=2`, con 5 s de espera); una derivada a revisión manual no.
+  Volver a lanzar una corrida que ya terminó COMPLETED no migra dos veces. Códigos de salida: 0 bien, 1 fallo técnico,
+  2 parámetros, 3 revisión manual.
+- **Equivalencia con el legacy.** `scripts/equivalencia_legacy.py` reimplementa en Python, sin compartir código, las
+  reglas del proceso legacy y compara valor por valor con la salida del batch. En las tres semanas: 0 diferencias.
+- **Imagen Docker** de una sola ejecución (`Dockerfile`): el compose la corre antes que los microservicios.
 
 ```bash
-java -jar target/banco-xyz-batch-1.0.0.jar --job=completa --dataset=semana_3 \
-    --banco.batch.estrategia=SECUENCIAL --banco.batch.umbral-rechazo-omision=0.80
+# Contra la base del ecosistema (publicada en 127.0.0.1:5439) o la que indique SPRING_DATASOURCE_URL
+java -jar target/banco-xyz-batch-1.0.0.jar --job=completa --dataset=semana_3 --corrida=carga-semana_3
+#   -> semana_3 trae 40,7 % de filas sucias: CALIDAD_INACEPTABLE, código 3, no se publica.
+# El área de datos autoriza la contingencia y se retoma la MISMA corrida (no se migra de nuevo lo que ya estaba):
+java -jar target/banco-xyz-batch-1.0.0.jar --job=completa --dataset=semana_3 --corrida=carga-semana_3 \
+     --banco.batch.umbral-rechazo-omision=0.80
+python3 scripts/equivalencia_legacy.py data/semana_3 salida
 ```
-
-Con esos parámetros la carga termina `COMPLETED` con calidad `DEGRADADA` (3.000 filas leídas). Ver el
-[README general](../README.md) para el resto del ecosistema.
 
 ---
 
@@ -33,7 +52,7 @@ procesa como un Step independiente.
 > Datos de origen: <https://github.com/KariVillagran/bank_legacy_data>
 
 
-> **Nota histórica.** En las semanas 4 y 5 este módulo vivió dentro de `banco-xyz-bff` y cargó las bases de los puertos 5436 y 5437. Desde la semana 6 es un proyecto aparte que carga la base del puerto 5438 (ver "En la semana 6"). Las secciones siguientes describen el proyecto tal como se entregó en la semana 3.
+> **Nota histórica.** Las secciones siguientes describen el proyecto de la semana 3 (con `bank_legacy_data` y los nombres de archivo de entonces). En las semanas 4 y 5 este módulo vivió dentro de `banco-xyz-bff` y cargó las bases de los puertos 5436 y 5437. Desde la semana 6 es un proyecto aparte que carga la base del puerto 5438 (ver "En la semana 6"). Las secciones siguientes describen el proyecto tal como se entregó en la semana 3.
 ---
 
 ## 1. La decisión de la semana, y por qué

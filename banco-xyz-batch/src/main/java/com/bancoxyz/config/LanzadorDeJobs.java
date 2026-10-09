@@ -3,6 +3,7 @@ package com.bancoxyz.config;
 import com.bancoxyz.common.Constantes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobInstance;
@@ -10,6 +11,8 @@ import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
+import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ExitCodeGenerator;
@@ -48,6 +51,18 @@ import java.util.Map;
  *   # de modo que la segunda reanuda la primera en vez de empezar de cero
  *   java -jar banco-xyz-batch.jar --job=transacciones --dataset=semana_3 --corrida=cierre-agosto
  * </pre>
+ *
+ * <h2>Politica de reejecucion</h2>
+ * <ul>
+ *   <li>Fallo tecnico (la base se cayo y se agotaron los reintentos del chunk): el lanzador reejecuta
+ *       solo, hasta {@code banco.batch.reejecuciones-automaticas} veces, sobre la misma JobInstance.</li>
+ *   <li>Calidad inaceptable o conciliacion que no cuadra: no se reejecuta; codigo de salida 3 (revision
+ *       manual).</li>
+ *   <li>Una corrida que ya termino COMPLETED no se vuelve a ejecutar (codigo 0): levantar de nuevo el
+ *       contenedor del batch no duplica la carga.</li>
+ * </ul>
+ * <p>Codigos de salida: 0 bien, 1 fallo tecnico tras las reejecuciones, 2 parametros invalidos,
+ * 3 revision manual.</p>
  */
 @Component
 // Se apaga en las pruebas (banco.batch.lanzador=false): alli los Jobs los dispara el test,
@@ -126,15 +141,52 @@ public class LanzadorDeJobs implements ApplicationRunner, ExitCodeGenerator {
         registrarConfiguracionEfectiva(nombreJob, carpetaEntrada, etiquetaCorrida);
         avisarSiEsReanudacion(nombreJob, parametros);
 
-        JobExecution ejecucion = jobLauncher.run(job, parametros);
+        JobExecution ejecucion;
+        try {
+            ejecucion = jobLauncher.run(job, parametros);
+            int reejecuciones = 0;
+            while (ejecucion.getStatus() == BatchStatus.FAILED && !requiereRevisionManual(ejecucion)
+                    && reejecuciones < propiedades.getReejecucionesAutomaticas()) {
+                reejecuciones++;
+                log.warn("REEJECUCION AUTOMATICA {}/{}: la ejecucion {} termino FAILED por un fallo tecnico. "
+                                + "Se retoma la misma instancia (corrida={}) en {} ms.", reejecuciones,
+                        propiedades.getReejecucionesAutomaticas(), ejecucion.getId(), etiquetaCorrida,
+                        propiedades.getEsperaReejecucionMs());
+                Thread.sleep(propiedades.getEsperaReejecucionMs());
+                ejecucion = jobLauncher.run(job, parametros);
+            }
+        } catch (JobInstanceAlreadyCompleteException yaPublicada) {
+            // Volver a levantar el contenedor del batch con la misma etiqueta no migra dos veces.
+            log.info("La corrida '{}' de '{}' ya termino COMPLETED: no se vuelve a migrar. Para una carga nueva, "
+                    + "otra --corrida.", etiquetaCorrida, nombreJob);
+            return;
+        } catch (JobRestartException limiteDeArranques) {
+            log.error("La corrida '{}' de '{}' no se puede retomar: {}", etiquetaCorrida, nombreJob,
+                    limiteDeArranques.getMessage());
+            codigoSalida = 1;
+            return;
+        }
+
         if (!ejecucion.getStatus().isUnsuccessful()) {
             log.info("Job '{}' finalizado con estado {}", nombreJob, ejecucion.getStatus());
+        } else if (requiereRevisionManual(ejecucion)) {
+            log.error("Job '{}' finalizado con estado {} y derivado a REVISION MANUAL: {}. No se reejecuta solo; "
+                            + "una vez corregido el origen, relanzar con --corrida={}", nombreJob,
+                    ejecucion.getStatus(), ejecucion.getExecutionContext().getString(Constantes.CTX_REVISION_MANUAL),
+                    etiquetaCorrida);
+            codigoSalida = 3;
         } else {
             log.error("Job '{}' finalizado con estado {}. Para reintentarlo sobre la misma "
                             + "instancia: volver a lanzar con --corrida={}",
                     nombreJob, ejecucion.getStatus(), etiquetaCorrida);
             codigoSalida = 1;
         }
+    }
+
+    /** Un fallo de calidad o de integridad no se arregla reintentando: lo marcan el decisor y la conciliacion. */
+    private static boolean requiereRevisionManual(JobExecution ejecucion) {
+        return ejecucion.getExecutionContext() != null
+                && ejecucion.getExecutionContext().containsKey(Constantes.CTX_REVISION_MANUAL);
     }
 
     /**

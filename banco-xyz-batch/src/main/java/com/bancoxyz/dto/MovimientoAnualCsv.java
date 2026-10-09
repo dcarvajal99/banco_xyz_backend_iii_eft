@@ -1,7 +1,7 @@
 package com.bancoxyz.dto;
 
 /**
- * Fila cruda de {@code cuentas_anuales.csv} (historial anual de operaciones).
+ * Fila cruda de {@code estados_financieros_anuales.csv} (historial anual de operaciones).
  *
  * <p>Campos en {@code String} para tolerar fechas en formatos mixtos, montos vacios y
  * descripciones faltantes sin romper la lectura.</p>

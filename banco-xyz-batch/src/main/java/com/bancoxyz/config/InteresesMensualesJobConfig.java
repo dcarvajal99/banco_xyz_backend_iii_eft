@@ -4,6 +4,7 @@ import com.bancoxyz.batch.listener.RegistroRechazadoSkipListener;
 import com.bancoxyz.batch.processor.InteresItemProcessor;
 import com.bancoxyz.batch.partition.ParticionadorPorRangoDeLineas;
 import com.bancoxyz.batch.reader.LectoresCsv;
+import com.bancoxyz.batch.tasklet.PublicacionDelCierreTasklet;
 import com.bancoxyz.batch.tasklet.ResumenInteresesTasklet;
 import com.bancoxyz.common.Constantes;
 import com.bancoxyz.dto.InteresCsv;
@@ -27,16 +28,16 @@ import java.nio.file.Path;
  * Job 2 — Calculo de intereses mensuales.
  *
  * <p>Reemplaza el shell script que aplicaba las tasas sobre el maestro de cuentas. Migra
- * {@code intereses.csv}, aplica la tasa que corresponde a cada producto, deja actualizado
+ * {@code intereses_trimestrales.csv}, aplica la tasa que corresponde a cada producto, deja actualizado
  * el saldo final en la base de datos y exporta el detalle liquidado.</p>
  *
  * <p>Desde la semana 2 el paso de migracion corre en paralelo (tres hilos, chunks de cinco)
  * y el flujo pasa por el decisor de calidad antes de liquidar. Ver {@link ArmadorDeJobs}.</p>
  *
  * <pre>
- *   limpieza -> procesarInteresesStep -> exportarRechazadosStep -> [decisor]
- *   (tasklet)      (chunk, 3 hilos)            (tasklet)              |
- *                                                  generarResumenInteresesStep (tasklet)
+ *   limpieza -> procesarInteresesStep -> exportarRechazadosStep -> conciliacionStep -> [decisor]
+ *   (tasklet)      (chunk, particiones)        (tasklet)              (tasklet)          |
+ *                                     generarResumenInteresesStep -> publicarCierreStep (tasklets)
  * </pre>
  */
 @Configuration
@@ -51,9 +52,10 @@ public class InteresesMensualesJobConfig {
     @Bean
     public Job calculoInteresesMensualesJob(ArmadorDeJobs armador,
                                             Step procesarInteresesStep,
-                                            Step generarResumenInteresesStep) {
+                                            Step generarResumenInteresesStep,
+                                            Step publicarCierreStep) {
         return armador.jobDeMigracion(Constantes.JOB_INTERESES_MENSUALES,
-                procesarInteresesStep, generarResumenInteresesStep);
+                procesarInteresesStep, generarResumenInteresesStep, publicarCierreStep);
     }
 
     @Bean
@@ -70,6 +72,12 @@ public class InteresesMensualesJobConfig {
     @Bean
     public Step generarResumenInteresesStep(ResumenInteresesTasklet resumenInteresesTasklet) {
         return constructor.pasoDeTarea(Constantes.STEP_RESUMEN_INTERESES, resumenInteresesTasklet);
+    }
+
+    /** Una fila por cuenta y el maestro de clientes con ids estables, para los microservicios. */
+    @Bean
+    public Step publicarCierreStep(PublicacionDelCierreTasklet publicacionDelCierreTasklet) {
+        return constructor.pasoDeTarea(Constantes.STEP_PUBLICAR_CIERRE, publicacionDelCierreTasklet);
     }
 
     /**

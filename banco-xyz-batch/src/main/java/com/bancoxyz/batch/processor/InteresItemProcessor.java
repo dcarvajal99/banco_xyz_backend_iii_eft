@@ -18,7 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Aplica el interes mensual sobre cada cuenta de {@code intereses.csv} (Job 2).
+ * Aplica el interes mensual sobre cada cuenta de {@code intereses_trimestrales.csv} (Job 2).
  *
  * <p>El calculo se guarda desglosado (saldo inicial, tasa, interes, saldo final) para que
  * auditoria pueda rehacerlo sin volver a correr el batch. La aritmetica usa
@@ -40,8 +40,6 @@ import java.util.List;
 @Component
 @StepScope
 public class InteresItemProcessor implements ItemProcessor<InteresCsv, CuentaInteres> {
-
-    private static final String TITULAR_SIN_IDENTIFICAR = "Sin identificar";
 
     private final PropiedadesBatch propiedades;
     private final RegistroRechazadoService bitacora;
@@ -116,7 +114,7 @@ public class InteresItemProcessor implements ItemProcessor<InteresCsv, CuentaInt
 
         String nombre = nvl(fila.getNombre());
         if (nombre.isBlank() || "unknown".equalsIgnoreCase(nombre)) {
-            nombre = TITULAR_SIN_IDENTIFICAR;
+            nombre = Constantes.TITULAR_SIN_IDENTIFICAR;
             anomalia = true;
             observaciones.add("Titular sin identificar en el archivo legacy");
         }
@@ -155,6 +153,7 @@ public class InteresItemProcessor implements ItemProcessor<InteresCsv, CuentaInt
         cuenta.setAnomalia(anomalia);
         cuenta.setObservacion(observaciones.isEmpty() ? null : String.join("; ", observaciones));
         cuenta.setJobExecutionId(jobExecutionId);
+        cuenta.setLineaOrigen(linea);
         return cuenta;
     }
 

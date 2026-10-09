@@ -1,7 +1,7 @@
 package com.bancoxyz.dto;
 
 /**
- * Fila cruda de {@code intereses.csv} (maestro de cuentas del sistema legacy).
+ * Fila cruda de {@code intereses_trimestrales.csv} (maestro de cuentas del sistema legacy).
  *
  * <p>Igual que el resto de DTO de entrada, todos los campos son {@code String} para que la
  * lectura nunca falle por un saldo vacio o una edad fuera de rango.</p>

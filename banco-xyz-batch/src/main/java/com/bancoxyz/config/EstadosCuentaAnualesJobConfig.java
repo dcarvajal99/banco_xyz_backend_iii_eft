@@ -27,7 +27,7 @@ import java.nio.file.Path;
  * Job 3 — Generacion de estados de cuenta anuales.
  *
  * <p>Reemplaza la compilacion manual que el area de auditoria armaba a fin de ano con
- * shell scripts. Migra {@code cuentas_anuales.csv} normalizando el signo de los montos y
+ * shell scripts. Migra {@code estados_financieros_anuales.csv} normalizando el signo de los montos y
  * completando descripciones, y luego compila el estado por cuenta y ano.</p>
  *
  * <p>Desde la semana 2 el paso de migracion corre en paralelo (tres hilos, chunks de cinco)
