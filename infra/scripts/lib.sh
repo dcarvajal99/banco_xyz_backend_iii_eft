@@ -1,24 +1,21 @@
 #!/usr/bin/env bash
-# Funciones comunes de los scripts de demostracion del Banco XYZ (semana 8: ecosistema en contenedores).
-# Imprimen cada solicitud y su respuesta de forma legible para las capturas de evidencia.
+# Funciones comunes de los scripts de evidencia del Banco XYZ (EFT: diez aplicaciones en contenedores).
+# Imprimen cada solicitud y su respuesta de forma legible para las capturas.
 # Uso: source "$(dirname "$0")/lib.sh"
 #
-# Todo corre en el docker-compose.yaml de la raiz. Desde el equipo solo se alcanzan los puertos que el compose publica
-# en 127.0.0.1; lo interno (el core, la base, Kafka) se consulta dentro de la red del compose. Cada llamada HTTPS valida
-# el certificado contra la CA del banco (--cacert, nunca -k).
+# Desde el equipo solo se alcanza lo que el compose publica en 127.0.0.1 (los tres BFF, banco-auth, Config Server,
+# Eureka y la base). Los microservicios viven en la red interna: se consultan desde un contenedor de curl conectado a
+# ella (llamar_interno). Cada llamada HTTPS valida el certificado contra la CA del banco (--cacert, nunca -k).
 
 RAIZ_PROYECTO="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 RAIZ_REPO="$(cd "$RAIZ_PROYECTO/.." && pwd)"
 COMPOSE=(docker compose --project-directory "$RAIZ_REPO" -f "$RAIZ_REPO/docker-compose.yaml")
-# Copia local de la CA y de algunos certificados (para curl desde el equipo); la PKI vive en el volumen del compose.
 CERTS="${BANCO_CERTIFICADOS:-$RAIZ_PROYECTO/certificados}"
 RED="banco-xyz"
 VOLUMEN_CERTIFICADOS="banco-xyz_certificados"
 IMAGEN_CURL="curlimages/curl:8.11.1"
 IMAGEN_KAFKA="apache/kafka:3.9.1"
-# Herramientas de consola de Kafka en un contenedor propio y efimero de la red del compose, nunca dentro del broker: ahi
-# comparten su limite de memoria, y cada una hereda el heap de 384 MB del broker (KAFKA_HEAP_OPTS). Cuatro lecturas en
-# paralelo dejaban al broker sin memoria (lo mataba el OOM killer y Docker lo reiniciaba).
+# Herramientas de Kafka en un contenedor efimero de la red, nunca dentro del broker (comparten su limite de memoria).
 KAFKA_CLI=(docker run --rm --network "$RED" -e KAFKA_HEAP_OPTS="-Xms32m -Xmx128m" "$IMAGEN_KAFKA")
 KAFKA_CLI_ENTRADA=(docker run --rm -i --network "$RED" -e KAFKA_HEAP_OPTS="-Xms32m -Xmx128m" "$IMAGEN_KAFKA")
 
@@ -26,26 +23,38 @@ CONFIG="https://localhost:8888"
 EUREKA1="http://127.0.0.1:8761"
 EUREKA2="http://127.0.0.1:8762"
 AUTH="https://localhost:8081"
-TRANSFERENCIAS="https://localhost:8082"
-NOTIFICACIONES="https://localhost:8084"
-CORE_INTERNO="https://banco-core-api:8080"
-OP_CORE="http://127.0.0.1:9080"
-OP_AUTH="http://127.0.0.1:9081"
-OP_TRANSFERENCIAS="http://127.0.0.1:9082"
-OP_NOTIFICACIONES="http://127.0.0.1:9084"
-CLAVE_CLIENTES="${BANCO_CLAVE_CLIENTES:-Cliente2026!}"
-SECRETO_BANCA_WEB="${BANCO_OAUTH_BANCA_WEB_SECRETO:-banca-web-secreto-dev}"
-SECRETO_TRANSFERENCIAS="${BANCO_OAUTH_TRANSFERENCIAS_SECRETO:-transferencias-oauth-dev}"
+WEB="https://localhost:8090"
+MOVIL="https://localhost:8091"
+CAJERO="https://localhost:8083"
+CUENTAS_INTERNO="https://cuentas-service:8100/api/v1"
+CLIENTES_INTERNO="https://clientes-service:8101/api/v1"
+PAGOS_INTERNO="https://pagos-service:8102/api/v1"
+AUTH_INTERNO="https://banco-auth:8081"
+CLAVE_CLIENTES="${BANCO_DEMO_CLAVE_CLIENTES:-Cliente2026!}"
+CLAVE_EJECUTIVO="${BANCO_DEMO_CLAVE_EJECUTIVO:-Ejecutivo2026!}"
+SECRETO_PAGOS="${BANCO_OAUTH_PAGOS_SECRETO:-pagos-oauth-dev}"
+SECRETO_CAJERO="${BANCO_OAUTH_BFF_CAJERO_SECRETO:-bff-cajero-oauth-dev}"
 SECRETO_OPERACION="${BANCO_OAUTH_OPERACION_SECRETO:-operacion-secreto-dev}"
-REDIRECCION="http://127.0.0.1:8099/callback"
+REDIRECCION_MOVIL="http://127.0.0.1:8099/callback"
 JSON=(-H "Content-Type: application/json")
 
-# obtener_certificados: copia la PKI del volumen del compose a la carpeta local (la regenera la imagen pki).
-obtener_certificados() {
-  mkdir -p "$CERTS"
-  "${COMPOSE[@]}" cp pki:/certificados/. "$CERTS/" > /dev/null 2>&1
+# copiar_volumen VOLUMEN DESTINO: copia el contenido de un volumen del compose a una carpeta del equipo. Con docker cp
+# (por la API de Docker): un bind mount de una carpeta del Mac no siempre llega a la VM de Colima.
+copiar_volumen() {
+  local id
+  mkdir -p "$2"
+  id=$(docker create -v "$1:/origen:ro" alpine:3.20 true)
+  docker cp -q "$id:/origen/." "$2/" > /dev/null 2>&1
+  docker rm "$id" > /dev/null
 }
-[ -f "$CERTS/ca/ca.crt" ] || obtener_certificados
+
+# obtener_certificados: copia la PKI del volumen del compose a la carpeta local (la genera la imagen pki).
+obtener_certificados() {
+  copiar_volumen "$VOLUMEN_CERTIFICADOS" "$CERTS"
+}
+# Se recopia si falta o si el volumen tiene otra CA (p. ej. despues de docker compose down -v).
+ca_volumen=$(docker run --rm -v "$VOLUMEN_CERTIFICADOS:/origen:ro" alpine:3.20 cat /origen/ca/ca.crt 2>/dev/null)
+if [ ! -f "$CERTS/ca/ca.crt" ] || [ "$ca_volumen" != "$(cat "$CERTS/ca/ca.crt")" ]; then obtener_certificados; fi
 TLS=(--cacert "$CERTS/ca/ca.crt")
 
 if [ -n "${NO_COLOR:-}" ]; then
@@ -74,7 +83,7 @@ nota() {
 }
 
 # certificado RUTA: deja en CERT los argumentos de curl para presentar ese certificado de cliente
-# (p. ej. servicios/banco-core-api). Arreglo y no texto: la ruta del proyecto tiene espacios.
+# (p. ej. servicios/cuentas-service). Arreglo y no texto: la ruta del proyecto tiene espacios.
 certificado() {
   CERT=(--cert "$CERTS/$1.crt" --key "$CERTS/$1.key")
 }
@@ -141,7 +150,7 @@ llamar() {
 }
 
 # llamar_interno METODO URL [argumentos de curl...]: como llamar, pero desde un contenedor de curl conectado a la red
-# del compose, con el volumen de certificados (rutas /certificados/...). Para lo que no se publica fuera, como el core.
+# del compose, con el volumen de certificados (rutas /certificados/...). Para lo que no se publica fuera (los microservicios).
 llamar_interno() {
   local metodo="$1" url="$2"
   shift 2
@@ -225,42 +234,7 @@ uuid() {
   python3 -c 'import uuid; print(uuid.uuid4())'
 }
 
-# token USUARIO [SCOPES]: flujo OAuth 2.0 authorization_code + PKCE completo, como lo haria la banca en linea:
-#   1) /oauth2/authorize sin sesion -> el servidor de autorizacion pide login; 2) formulario de login (con su token CSRF);
-#   3) vuelve a /oauth2/authorize con sesion -> redireccion al cliente con el codigo; 4) /oauth2/token con el codigo y el
-#   code_verifier. Deja TOKEN (access token), REFRESCO, ID_TOKEN, KID y BEARER. Sin salida en pantalla.
-token() {
-  local usuario="$1" scopes="${2:-openid transferencias.escribir transferencias.leer notificaciones.leer}"
-  local jar verificador desafio csrf destino codigo respuesta
-  jar=$(mktemp)
-  verificador=$(python3 -c 'import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode())')
-  desafio=$(python3 -c 'import hashlib,base64,sys;print(base64.urlsafe_b64encode(hashlib.sha256(sys.argv[1].encode()).digest()).rstrip(b"=").decode())' "$verificador")
-  curl -s -o /dev/null -c "$jar" -b "$jar" "${TLS[@]}" -G "$AUTH/oauth2/authorize" -H "Accept: text/html" \
-    --data-urlencode "response_type=code" --data-urlencode "client_id=banca-web" --data-urlencode "redirect_uri=$REDIRECCION" \
-    --data-urlencode "scope=$scopes" --data-urlencode "state=estado-$RANDOM" \
-    --data-urlencode "code_challenge=$desafio" --data-urlencode "code_challenge_method=S256"
-  csrf=$(curl -s -c "$jar" -b "$jar" "${TLS[@]}" "$AUTH/login" | sed -n 's/.*name="_csrf" value="\([^"]*\)".*/\1/p')
-  destino=$(curl -s -o /dev/null -w '%{redirect_url}' -c "$jar" -b "$jar" "${TLS[@]}" "$AUTH/login" \
-    --data-urlencode "username=$usuario" --data-urlencode "password=$CLAVE_CLIENTES" --data-urlencode "_csrf=$csrf")
-  destino=$(curl -s -o /dev/null -w '%{redirect_url}' -c "$jar" -b "$jar" "${TLS[@]}" "$destino")
-  codigo=$(python3 -c 'import sys,urllib.parse as u;print((u.parse_qs(u.urlparse(sys.argv[1]).query).get("code") or [""])[0])' "$destino")
-  rm -f "$jar"
-  respuesta=$(curl -s "${TLS[@]}" -u "banca-web:$SECRETO_BANCA_WEB" "$AUTH/oauth2/token" -d grant_type=authorization_code \
-    --data-urlencode "code=$codigo" --data-urlencode "redirect_uri=$REDIRECCION" --data-urlencode "code_verifier=$verificador")
-  TOKEN=$(campo access_token "$respuesta")
-  REFRESCO=$(campo refresh_token "$respuesta")
-  ID_TOKEN=$(campo id_token "$respuesta")
-  KID=$(python3 -c 'import sys,base64,json;h=sys.argv[1].split(".")[0];print(json.loads(base64.urlsafe_b64decode(h+"="*(-len(h)%4))).get("kid",""))' "$TOKEN" 2>/dev/null)
-  BEARER=(-H "Authorization: Bearer $TOKEN")
-  [ -n "$TOKEN" ] || { printf '%sNo se obtuvo token para %s: %s%s\n' "$C_ERR" "$usuario" "$respuesta" "$C_0"; return 1; }
-}
 
-# token_servicio CLIENTE SECRETO SCOPE: flujo client_credentials (servicio a servicio). Deja TOKEN_SERVICIO.
-token_servicio() {
-  local respuesta
-  respuesta=$(curl -s "${TLS[@]}" -u "$1:$2" "$AUTH/oauth2/token" -d grant_type=client_credentials --data-urlencode "scope=$3")
-  TOKEN_SERVICIO=$(campo access_token "$respuesta")
-}
 
 # claims_jwt TOKEN: encabezado y claims de un JWT, en dos lineas (la firma no se muestra).
 claims_jwt() {
@@ -276,58 +250,10 @@ print("  claims:     " + json.dumps(claims, ensure_ascii=False))
 PY
 }
 
-# transferencia_breve: resume la transferencia del ultimo cuerpo en pocas lineas (estado, cuentas, historial).
-transferencia_breve() {
-  python3 - "$CUERPO" <<'PY'
-import json, sys
-try:
-    t = json.loads(sys.argv[1], parse_float=str)
-except ValueError:
-    sys.exit(0)
-print("  id %s · estado %s · validacion %s · %s → %s · $%s" % (t.get("id"), t.get("estado"), t.get("validacion"),
-      t.get("cuentaOrigen"), t.get("cuentaDestino"), t.get("monto")))
-def hora(texto):
-    hms, _, fraccion = texto[11:].partition(".")
-    return "%s.%s" % (hms, (fraccion + "000")[:3])
-for i, h in enumerate(t.get("historial", [])):
-    print("  %s %s %-24s %s" % ("historial:" if i == 0 else "          ", hora(h["ocurridoEn"]), h["evento"], h.get("detalle") or ""))
-PY
-}
 
-# transferir ORIGEN DESTINO MONTO [CLAVE_IDEMPOTENCIA]: POST a transferencias-service con el TOKEN vigente.
-# Muestra la respuesta resumida (COMPLETO=1 la muestra entera) y deja el id en TRANSFERENCIA (vacio si no se acepto).
-transferir() {
-  local clave="${4:-$(uuid)}"
-  if [ -n "${COMPLETO:-}" ]; then
-    llamar POST "$TRANSFERENCIAS/api/v1/transferencias" "${BEARER[@]}" "${JSON[@]}" -H "Idempotency-Key: $clave" \
-      --data-raw "{\"cuentaOrigen\":$1,\"cuentaDestino\":$2,\"monto\":$3}"
-  else
-    SIN_CUERPO=2 llamar POST "$TRANSFERENCIAS/api/v1/transferencias" "${BEARER[@]}" "${JSON[@]}" \
-      -H "Idempotency-Key: $clave" --data-raw "{\"cuentaOrigen\":$1,\"cuentaDestino\":$2,\"monto\":$3}"
-    case "$ESTADO" in
-      2*) transferencia_breve ;;
-      *) printf '%s\n' "$CUERPO" | python3 -m json.tool --no-ensure-ascii 2>/dev/null | sed 's/^/  /' ;;
-    esac
-  fi
-  TRANSFERENCIA=$(campo id)
-}
 
-# seguir_transferencia ID [SEGUNDOS]: consulta la transferencia hasta que llegue a COMPLETADA o RECHAZADA y muestra
-# el resultado resumido con su historial. Deja el estado final en ESTADO_TRANSFERENCIA.
-seguir_transferencia() {
-  local id="$1" limite="${2:-30}" respuesta=""
-  ESTADO_TRANSFERENCIA=""
-  for _ in $(seq 1 $((limite * 2))); do
-    respuesta=$(curl -sS "${TLS[@]}" "${BEARER[@]}" "$TRANSFERENCIAS/api/v1/transferencias/$id")
-    ESTADO_TRANSFERENCIA=$(campo estado "$respuesta")
-    case "$ESTADO_TRANSFERENCIA" in COMPLETADA|RECHAZADA) break ;; esac
-    sleep 0.5
-  done
-  SIN_CUERPO=2 llamar GET "$TRANSFERENCIAS/api/v1/transferencias/$id" "${BEARER[@]}"
-  transferencia_breve
-}
 
-# sql "consulta": ejecuta en la base de la semana 7 y devuelve filas sin formato (columnas separadas por |).
+# sql "consulta": ejecuta en la base del compose (todos los esquemas) y devuelve filas sin formato (columnas separadas por |).
 sql() {
   "${COMPOSE[@]}" exec -T db psql -U banco -d banco_xyz -tAc "$1"
 }
@@ -337,38 +263,33 @@ tabla_sql() {
   "${COMPOSE[@]}" exec -T db psql -U banco -d banco_xyz -P footer=off -c "$1" | sed 's/^/  /'
 }
 
-saldo() {
-  sql "select saldo_disponible from core.cuenta where id = $1"
-}
 
-# circuito PUERTO_OPERACION NOMBRE: estado del circuit breaker de Resilience4j (CLOSED, OPEN, HALF_OPEN).
+# Los circuitos se leen del puerto de operacion (management, HTTP sin TLS) de cada servicio, desde la red interna.
+# DESTINO es servicio:puerto del compose (p. ej. cuentas-service:9100) o el nombre de un contenedor (instancia exacta).
+
+# circuito DESTINO NOMBRE: estado del circuit breaker de Resilience4j (CLOSED, OPEN, HALF_OPEN).
 circuito() {
-  curl -s "http://127.0.0.1:$1/actuator/circuitbreakers" \
+  operacion "$1" /actuator/circuitbreakers \
     | python3 -c "import sys,json; print(json.load(sys.stdin)['circuitBreakers']['$2']['state'])" 2>/dev/null
 }
 
-# mostrar_circuito PUERTO_OPERACION NOMBRE [SERVICIO]: estado y metricas del circuito, en una linea.
+# mostrar_circuito DESTINO NOMBRE [ETIQUETA]: estado y metricas del circuito, en una linea.
 mostrar_circuito() {
-  curl -s "http://127.0.0.1:$1/actuator/circuitbreakers" | python3 -c "
+  operacion "$1" /actuator/circuitbreakers | python3 -c "
 import sys, json
 c = json.load(sys.stdin)['circuitBreakers']['$2']
-print('  %-22s circuito %-5s estado=%-9s tasa_de_fallas=%-6s fallidas=%s no_permitidas=%s' % ('${3:-}', '$2', c['state'],
+print('  %-22s circuito %-8s estado=%-9s tasa_de_fallas=%-6s fallidas=%s no_permitidas=%s' % ('${3:-$1}', '$2', c['state'],
       c['failureRate'], c['failedCalls'], c['notPermittedCalls']))"
 }
 
-# eventos_circuito PUERTO_OPERACION NOMBRE [N]: ultimos N eventos del circuito (actuator/circuitbreakerevents).
+# eventos_circuito DESTINO NOMBRE [N]: ultimos N eventos del circuito (actuator/circuitbreakerevents).
 eventos_circuito() {
-  curl -s "http://127.0.0.1:$1/actuator/circuitbreakerevents/$2" | python3 -c "
+  operacion "$1" "/actuator/circuitbreakerevents/$2" | python3 -c "
 import sys, json
 eventos = json.load(sys.stdin)['circuitBreakerEvents'][-${3:-8}:]
 for e in eventos:
     detalle = e.get('stateTransition') or (e.get('errorMessage') or '')
     print('  %s %-22s %s' % (e['creationTime'][11:23], e['type'], detalle[:88]))"
-}
-
-# en_contenedor CONTENEDOR URL: GET a un endpoint de operacion desde dentro del contenedor (wget de la imagen).
-en_contenedor() {
-  docker exec "$1" wget -qO- "$2" 2>/dev/null
 }
 
 # kafka_topicos ARGUMENTOS: kafka-topics.sh dentro del contenedor de Kafka.
@@ -410,12 +331,103 @@ leer_topico() {
     --property print.offset=true --property print.key=true 2>/dev/null
 }
 
-# eventos_de_transferencia ID: los eventos de esa transferencia en los cuatro topicos de la saga, en orden de
-# ocurrencia, con topico, particion, offset y clave. Lee cada topico desde el principio, sin grupo propio.
-eventos_de_transferencia() {
+
+resumen_final() {
+  printf '\n%s── Resultado: %s verificaciones correctas, %s fallas ──%s\n' "$C_B" "$OK" "$FALLAS" "$C_0"
+  [ "$FALLAS" -eq 0 ]
+}
+
+# ----------------------------------------------------------------------------------------------- credenciales por canal
+
+# sesion_web USUARIO CLAVE: inicia sesion en bff-web como lo haria el navegador (authorization_code + PKCE contra
+# banco-auth). Deja la cookie de sesion en JAR_WEB; el script nunca ve un token.
+sesion_web() {
+  local usuario="$1" clave="$2" destino csrf
+  JAR_WEB=$(mktemp)
+  destino=$(curl -s -o /dev/null -w '%{redirect_url}' -c "$JAR_WEB" -b "$JAR_WEB" "${TLS[@]}" "$WEB/oauth2/authorization/banco-auth")
+  curl -s -o /dev/null -c "$JAR_WEB" -b "$JAR_WEB" "${TLS[@]}" -H "Accept: text/html" "$destino"
+  csrf=$(curl -s -c "$JAR_WEB" -b "$JAR_WEB" "${TLS[@]}" "$AUTH/login" | sed -n 's/.*name="_csrf" value="\([^"]*\)".*/\1/p')
+  destino=$(curl -s -o /dev/null -w '%{redirect_url}' -c "$JAR_WEB" -b "$JAR_WEB" "${TLS[@]}" "$AUTH/login" \
+    --data-urlencode "username=$usuario" --data-urlencode "password=$clave" --data-urlencode "_csrf=$csrf")
+  destino=$(curl -s -o /dev/null -w '%{redirect_url}' -c "$JAR_WEB" -b "$JAR_WEB" "${TLS[@]}" "$destino")
+  curl -s -o /dev/null -c "$JAR_WEB" -b "$JAR_WEB" "${TLS[@]}" "$destino"
+  curl -s -o /dev/null -c "$JAR_WEB" -b "$JAR_WEB" "${TLS[@]}" "$WEB/web/api/sesion"
+  XSRF=$(awk '$6=="XSRF-TOKEN"{print $7}' "$JAR_WEB" | tail -1)
+  SESION_WEB=(-b "$JAR_WEB" -c "$JAR_WEB" -H "X-XSRF-TOKEN: $XSRF")
+}
+
+# token_movil USUARIO [SCOPES] [CLAVE]: la app movil (cliente PUBLICO banca-movil) obtiene su token con PKCE, sin secreto.
+token_movil() {
+  local usuario="$1" scopes="${2:-openid cuentas.leer clientes.leer pagos.escribir pagos.leer}" clave_usuario="${3:-$CLAVE_CLIENTES}"
+  local jar verificador desafio csrf destino codigo respuesta
+  jar=$(mktemp)
+  verificador=$(python3 -c 'import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode())')
+  desafio=$(python3 -c 'import hashlib,base64,sys;print(base64.urlsafe_b64encode(hashlib.sha256(sys.argv[1].encode()).digest()).rstrip(b"=").decode())' "$verificador")
+  curl -s -o /dev/null -c "$jar" -b "$jar" "${TLS[@]}" -G "$AUTH/oauth2/authorize" -H "Accept: text/html" \
+    --data-urlencode "response_type=code" --data-urlencode "client_id=banca-movil" --data-urlencode "redirect_uri=$REDIRECCION_MOVIL" \
+    --data-urlencode "scope=$scopes" --data-urlencode "state=app-$RANDOM" \
+    --data-urlencode "code_challenge=$desafio" --data-urlencode "code_challenge_method=S256"
+  csrf=$(curl -s -c "$jar" -b "$jar" "${TLS[@]}" "$AUTH/login" | sed -n 's/.*name="_csrf" value="\([^"]*\)".*/\1/p')
+  destino=$(curl -s -o /dev/null -w '%{redirect_url}' -c "$jar" -b "$jar" "${TLS[@]}" "$AUTH/login" \
+    --data-urlencode "username=$usuario" --data-urlencode "password=$clave_usuario" --data-urlencode "_csrf=$csrf")
+  destino=$(curl -s -o /dev/null -w '%{redirect_url}' -c "$jar" -b "$jar" "${TLS[@]}" "$destino")
+  codigo=$(python3 -c 'import sys,urllib.parse as u;print((u.parse_qs(u.urlparse(sys.argv[1]).query).get("code") or [""])[0])' "$destino")
+  ERROR_MOVIL=$(python3 -c 'import sys,urllib.parse as u;print((u.parse_qs(u.urlparse(sys.argv[1]).query).get("error") or [""])[0])' "$destino")
+  rm -f "$jar"
+  respuesta=$(curl -s "${TLS[@]}" "$AUTH/oauth2/token" -d grant_type=authorization_code -d client_id=banca-movil \
+    --data-urlencode "code=$codigo" --data-urlencode "redirect_uri=$REDIRECCION_MOVIL" --data-urlencode "code_verifier=$verificador")
+  TOKEN=$(campo access_token "$respuesta")
+  REFRESCO=$(campo refresh_token "$respuesta")
+  BEARER=(-H "Authorization: Bearer $TOKEN")
+  [ -n "$TOKEN" ]
+}
+
+# token_servicio CLIENTE SECRETO SCOPE: client_credentials de un servicio (bff-cajero, pagos-service...).
+token_servicio() {
+  local respuesta
+  respuesta=$(curl -s "${TLS[@]}" -u "$1:$2" "$AUTH/oauth2/token" -d grant_type=client_credentials --data-urlencode "scope=$3")
+  TOKEN_SERVICIO=$(campo access_token "$respuesta")
+}
+
+# ---------------------------------------------------------------------------------------------------------- consultas
+
+saldo() {
+  sql "select saldo_disponible from cuentas.cuenta where id = $1"
+}
+
+# esperar_pago ID [SEGUNDOS]: consulta el pago por bff-web hasta que llegue a un estado final.
+esperar_pago() {
+  local id="$1" limite="${2:-20}" respuesta=""
+  ESTADO_PAGO=""
+  for _ in $(seq 1 $((limite * 2))); do
+    respuesta=$(curl -s "${TLS[@]}" "${SESION_WEB[@]}" "$WEB/web/api/pagos/$id")
+    ESTADO_PAGO=$(campo estado "$respuesta")
+    case "$ESTADO_PAGO" in COMPLETADO|RECHAZADO) break ;; esac
+    sleep 0.5
+  done
+  CUERPO="$respuesta"
+}
+
+# pago_breve: una linea con el pago y su historial (del ultimo CUERPO).
+pago_breve() {
+  python3 - "$CUERPO" <<'PY'
+import json, sys
+try:
+    p = json.loads(sys.argv[1], parse_float=str)
+except ValueError:
+    sys.exit(0)
+print("  pago %s · %s · estado %s%s · validacion %s · $%s" % (p.get("id", "")[:8], p.get("operacion"), p.get("estado"),
+      " (" + p["motivo"] + ")" if p.get("motivo") else "", p.get("validacion"), p.get("monto")))
+for i, h in enumerate(p.get("historial", [])):
+    print("  %s %s %-22s %s" % ("historial:" if i == 0 else "          ", h["ocurridoEn"][11:23], h["evento"], h.get("detalle") or ""))
+PY
+}
+
+# eventos_de_pago ID: todos los eventos de Kafka (en los topicos de la saga) que mencionan ese pago, en orden.
+eventos_de_pago() {
   local id="$1" dir topico
   dir=$(mktemp -d)
-  for topico in transferencias.solicitadas cuentas.reservas antifraude.decisiones cuentas.transferencias; do
+  for topico in pagos.solicitados cuentas.movimientos seguridad.alertas; do
     leer_topico "$topico" > "$dir/$topico" &
   done
   wait
@@ -429,22 +441,90 @@ for topico in os.listdir(carpeta):
         if not m:
             continue
         try:
-            evento = json.loads(m[4], parse_float=str)
+            e = json.loads(m[4], parse_float=str)
         except ValueError:
             continue
-        if evento.get("transferenciaId") == buscado:
-            filas.append((evento.get("ocurridoEn", ""), topico, int(m[1]), int(m[2]), m[3], evento))
+        if buscado in (e.get("pagoId"), e.get("referencia")):
+            filas.append((e.get("ocurridoEn", ""), topico, int(m[1]), int(m[2]), m[3], e))
 filas.sort(key=lambda f: (f[0], f[3]))
-print("  %-24s %-27s %-4s %-6s %-6s %s" % ("EVENTO", "TOPICO", "PART", "OFFSET", "CLAVE", "DATOS"))
+print("  %-22s %-20s %-4s %-6s %-6s %s" % ("EVENTO", "TOPICO", "PART", "OFFSET", "CLAVE", "DATOS"))
 for _, topico, particion, offset, clave, e in filas:
-    datos = ["%s=%s" % (c, e[c]) for c in ("monto", "validacion", "motivo", "saldoOrigen") if e.get(c) is not None]
-    print("  %-24s %-27s %-4s %-6s %-6s %s" % (e.get("tipo"), topico, particion, offset, clave, " ".join(datos)))
-print("  (%d eventos con transferenciaId %s)" % (len(filas), buscado))
+    datos = ["%s=%s" % (c, e[c]) for c in ("operacion", "monto", "motivo", "saldoOrigen", "saldoDestino", "detalle") if e.get(c) is not None]
+    print("  %-22s %-20s %-4s %-6s %-6s %s" % (e.get("tipo"), topico, particion, offset, clave, " ".join(datos)[:90]))
+print("  (%d eventos del pago %s)" % (len(filas), buscado[:8]))
 PY
   rm -rf "$dir"
 }
 
-resumen_final() {
-  printf '\n%s── Resultado: %s verificaciones correctas, %s fallas ──%s\n' "$C_B" "$OK" "$FALLAS" "$C_0"
-  [ "$FALLAS" -eq 0 ]
+# operacion SERVICIO_DEL_COMPOSE RUTA: consulta el puerto de operacion de un servicio desde la red interna.
+operacion() {
+  docker run --rm --network "$RED" "$IMAGEN_CURL" -s "http://$1$2"
+}
+
+# pan_de_cuenta CUENTA: numero de tarjeta de demostracion de esa cuenta (4 + cuenta en 14 digitos + digito Luhn).
+pan_de_cuenta() {
+  python3 - "$1" <<'PY'
+import sys
+base = "4" + sys.argv[1].zfill(14)
+suma = 0
+for i, d in enumerate(reversed(base)):
+    n = int(d) * (2 if i % 2 == 0 else 1)
+    suma += n - 9 if n > 9 else n
+print(base + str((10 - suma % 10) % 10))
+PY
+}
+
+# cuenta_ahorro_de USUARIO: primera cuenta de ahorro activa (con tarjeta) del cliente de ese usuario.
+cuenta_ahorro_de() {
+  sql "select c.id from cuentas.cuenta c join clientes.usuario u on u.cliente_id = c.cliente_id
+       where u.usuario = '$1' and c.tipo = 'ahorro' and c.estado = 'ACTIVA'
+         and exists (select 1 from cuentas.tarjeta t where t.cuenta_id = c.id) order by c.id limit 1"
+}
+
+# bytes_de URL [argumentos de curl...]: tamano del cuerpo que viaja por la red (con gzip si el servidor comprime).
+bytes_de() {
+  local url="$1"
+  shift
+  curl -s -o /dev/null -w '%{size_download}' "${TLS[@]}" "$@" "$url"
+}
+
+# esperar_sano SERVICIO [SEGUNDOS]: espera a que todas las instancias del servicio esten healthy.
+esperar_sano() {
+  local servicio="$1" limite="${2:-180}" inicio=$SECONDS c pendientes
+  while [ $((SECONDS - inicio)) -lt "$limite" ]; do
+    pendientes=0
+    for c in $("${COMPOSE[@]}" ps -q "$servicio"); do
+      [ "$(docker inspect --format '{{.State.Health.Status}}' "$c" 2>/dev/null)" = "healthy" ] || pendientes=1
+    done
+    if [ "$pendientes" -eq 0 ] && [ -n "$("${COMPOSE[@]}" ps -q "$servicio")" ]; then
+      nota "$servicio sano en $((SECONDS - inicio)) s"
+      return 0
+    fi
+    sleep 3
+  done
+  nota "$servicio no quedo sano en $limite s"
+  return 1
+}
+
+# registros SERVICIO PATRON [N]: ultimas N lineas del log del servicio que contienen el patron.
+registros() {
+  "${COMPOSE[@]}" logs --no-color --no-log-prefix --since 5m "$1" 2>/dev/null | grep -E "$2" | tail -"${3:-3}" | cut -c1-180 | sed 's/^/  /'
+}
+
+# sql_pruebas "consulta": como sql, en la base de pruebas del batch (banco_xyz_pruebas).
+sql_pruebas() {
+  "${COMPOSE[@]}" exec -T db psql -U banco -d banco_xyz_pruebas -tAc "$1"
+}
+
+# asegurar_saldo CUENTA MINIMO: con la sesion web abierta (SESION_WEB), deposita por la saga lo que falte para que la
+# cuenta tenga al menos MINIMO. Los saldos del legacy son chicos: asi los scripts se pueden repetir sin agotarlos.
+asegurar_saldo() {
+  local actual falta respuesta
+  actual=$(saldo "$1")
+  falta=$(python3 -c "print(max(0, int($2 - $actual)))")
+  [ "$falta" -gt 0 ] || return 0
+  respuesta=$(curl -s "${TLS[@]}" "${SESION_WEB[@]}" "${JSON[@]}" -H "Idempotency-Key: $(uuid)" \
+    "$WEB/web/api/pagos/depositos" --data-raw "{\"cuentaDestino\":$1,\"monto\":$falta}")
+  esperar_pago "$(campo id "$respuesta")" 20
+  nota "deposito previo de \$$falta en la cuenta $1 para repetir la prueba ($ESTADO_PAGO)"
 }
