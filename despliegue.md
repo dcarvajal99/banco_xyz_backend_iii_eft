@@ -239,6 +239,10 @@ Escalar no requiere cambios: cada tarea se registra en Eureka con su propio id (
 entre las tareas del mismo grupo de consumidores. El outbox usa `for update skip locked`, así que varias réplicas
 publican sin duplicar.
 
+Las llamadas entre servicios van a la IP de cada réplica: el cliente acepta una IP solo si presenta el certificado del
+servicio que espera (`TlsHaciaReplicas`). En producción conviene dar a cada tarea su propio certificado (ECS Service
+Connect con TLS de AWS Private CA), para verificar también el nombre de cada réplica.
+
 ### 3.6 Batch programado
 
 ```bash

@@ -93,6 +93,9 @@ docker start "$victima" > /dev/null
 paso "Vuelta a una replica por servicio (libera memoria del equipo)"
 "${COMPOSE[@]}" up -d --no-deps --scale cuentas-service=1 --scale pagos-service=1 --scale clientes-service=1 \
   cuentas-service pagos-service clientes-service 2>&1 | sed 's/^/  /'
+# El script deja el ecosistema como lo encontro: una instancia UP de cada servicio, visible para los BFF.
+for s in cuentas-service pagos-service clientes-service; do esperar_eureka "$s" 1; done
+sleep 10
 
 rm -f "$JAR_WEB"
 resumen_final

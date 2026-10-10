@@ -76,7 +76,7 @@ class ConfiguracionCentralTest {
                 .containsEntry("resilience4j.retry.configs.http-interno.enable-exponential-backoff", "true")
                 .containsEntry("spring.datasource.url", "jdbc:postgresql://db:5432/banco_xyz")
                 .containsEntry("banco.jwt.emisor", "https://banco-auth:8081")
-                .containsEntry("eureka.instance.hostname", "${spring.application.name}")
+                .containsEntry("eureka.instance.prefer-ip-address", "true")
                 .containsEntry("eureka.client.service-url.defaultZone", "http://eureka-1:8761/eureka/,http://eureka-2:8762/eureka/");
     }
 
