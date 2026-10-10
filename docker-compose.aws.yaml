@@ -1,0 +1,33 @@
+# Override para una instancia EC2 (ver despliegue.md, opcion A). Se aplica encima del docker-compose.yaml:
+#
+#   BANCO_HOST_PUBLICO=ec2-x-x-x-x.compute-1.amazonaws.com \
+#     docker compose -f docker-compose.yaml -f docker-compose.aws.yaml up -d --build --wait
+#
+# Cambia solo lo que depende de la red: la entrada de cada canal y el login se publican en todas las interfaces de la
+# instancia (el Security Group decide quien llega) y el navegador usa el nombre publico en vez de localhost. Las
+# consolas de operacion (Config Server, Eureka, base) siguen solo en 127.0.0.1 de la instancia (tunel SSH).
+
+services:
+  banco-auth:
+    ports: !override
+      - "8081:8081"
+    environment:
+      # A donde vuelve el navegador despues del login: el bff-web publicado con el nombre de la instancia.
+      SPRING_APPLICATION_JSON: >-
+        {"banco.auth.bff-web.redirect-uris": "https://${BANCO_HOST_PUBLICO:?definir BANCO_HOST_PUBLICO}:8090/login/oauth2/code/banco-auth"}
+
+  bff-web:
+    ports: !override
+      - "8090:8090"
+    environment:
+      # El navegador va al login de banco-auth por el nombre publico (token-uri y jwk-set-uri siguen por la red interna).
+      SPRING_APPLICATION_JSON: >-
+        {"spring.security.oauth2.client.provider.banco-auth.authorization-uri": "https://${BANCO_HOST_PUBLICO:?definir BANCO_HOST_PUBLICO}:8081/oauth2/authorize"}
+
+  bff-movil:
+    ports: !override
+      - "8091:8091"
+
+  bff-cajero:
+    ports: !override
+      - "8083:8083"

@@ -46,13 +46,13 @@ class ReplicacionEntrePeersTest {
     @DisplayName("Registro en el nodo 1, consulta en el nodo 2: la instancia llega replicada y UP")
     void replicaElRegistro() throws Exception {
         String instancia = """
-                {"instance": {"instanceId": "prueba:transferencias-service:8082", "app": "TRANSFERENCIAS-SERVICE",
-                  "hostName": "localhost", "ipAddr": "127.0.0.1", "vipAddress": "transferencias-service",
-                  "secureVipAddress": "transferencias-service", "status": "UP",
+                {"instance": {"instanceId": "prueba:pagos-service:8102", "app": "PAGOS-SERVICE",
+                  "hostName": "localhost", "ipAddr": "127.0.0.1", "vipAddress": "pagos-service",
+                  "secureVipAddress": "pagos-service", "status": "UP",
                   "port": {"$": 8082, "@enabled": "false"}, "securePort": {"$": 8082, "@enabled": "true"},
                   "dataCenterInfo": {"@class": "com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo", "name": "MyOwn"}}}""";
         HttpResponse<String> registro = http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + puerto1
-                        + "/eureka/apps/TRANSFERENCIAS-SERVICE")).header("Content-Type", "application/json")
+                        + "/eureka/apps/PAGOS-SERVICE")).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(instancia)).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(registro.statusCode()).isEqualTo(204);
 
@@ -60,10 +60,10 @@ class ReplicacionEntrePeersTest {
         for (int i = 0; i < 40 && !enNodo2.contains("\"status\":\"UP\""); i++) {
             Thread.sleep(250);
             enNodo2 = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + puerto2
-                            + "/eureka/apps/TRANSFERENCIAS-SERVICE")).header("Accept", "application/json").GET().build(),
+                            + "/eureka/apps/PAGOS-SERVICE")).header("Accept", "application/json").GET().build(),
                     HttpResponse.BodyHandlers.ofString()).body();
         }
-        assertThat(enNodo2).contains("prueba:transferencias-service:8082").contains("\"status\":\"UP\"");
+        assertThat(enNodo2).contains("prueba:pagos-service:8102").contains("\"status\":\"UP\"");
     }
 
     private static ConfigurableApplicationContext nodo(int puerto, String nombre, String otroNodo) {

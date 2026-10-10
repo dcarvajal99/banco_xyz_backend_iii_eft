@@ -13,9 +13,9 @@ import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 /**
  * Sobre de una alerta de seguridad en el topico {@value Topicos#SEGURIDAD_ALERTAS}.
  *
- * <p>Lo producen clientes-service (usuario bloqueado), cuentas-service (tarjeta bloqueada por PIN) y antifraude-service
- * (operacion rechazada por fraude); lo consume notificaciones-service. Cada servicio tiene su copia del registro: el
- * acuerdo es el JSON, documentado en el README general.</p>
+ * <p>Lo producen clientes-service (usuario bloqueado), cuentas-service (tarjeta bloqueada por PIN) y pagos-service
+ * (operacion rechazada por fraude); lo consume este servicio para avisar al cliente. Cada servicio tiene su copia del
+ * registro: el acuerdo es el JSON del evento.</p>
  *
  * @param referencia lo que identifica el hecho para el cliente (usuario, ultimos 4 de la tarjeta, id de la operacion)
  */

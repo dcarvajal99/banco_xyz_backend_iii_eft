@@ -100,7 +100,7 @@ class CircuitoDeClientesTest extends PruebaOAuth {
     @DisplayName("Core dado de baja en Eureka (LoadBalancer sin instancias): servicio no disponible, sin reintento")
     void sinInstancias() throws Exception {
         core.expect(times(1), requestTo(CORE)).andRespond(solicitud -> {
-            throw new IllegalStateException("No instances available for banco-core-api");
+            throw new IllegalStateException("No instances available for cuentas-service");
         });
 
         iniciarSesion().andExpect(unauthenticated()).andExpect(redirectedUrl("/login?error=servicio"));

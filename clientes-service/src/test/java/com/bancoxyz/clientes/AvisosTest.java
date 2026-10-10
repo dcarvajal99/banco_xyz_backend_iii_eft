@@ -9,7 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
-/** Avisos al cliente desde los eventos de Kafka (antes notificaciones-service). */
+/** Avisos al cliente desde los eventos de Kafka. */
 class AvisosTest extends PruebaDeClientes {
 
     @Autowired

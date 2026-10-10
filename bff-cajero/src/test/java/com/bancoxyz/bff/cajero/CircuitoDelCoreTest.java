@@ -43,9 +43,9 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * Tolerancia a fallos del canal cajero con la politica del circuito que trae el BFF: la misma que entrega el Config
- * Server (banco-xyz-cloud/configuracion/bff-cajero.properties), comprobado por banco-xyz-cloud/scripts/verificar_coherencia.sh.
- * Se prueba la politica de produccion, no una copia pensada para la prueba.
+ * Tolerancia a fallos del canal cajero con la politica del circuito core: la misma que entrega el Config Server
+ * (configuracion/application.properties, http-interno), copiada en application-prueba.properties porque las pruebas
+ * corren sin el.
  */
 @ActiveProfiles("prueba")
 @SpringBootTest(properties = "spring.jackson.deserialization.fail-on-missing-creator-properties=true")

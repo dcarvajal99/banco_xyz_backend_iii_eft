@@ -45,7 +45,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
-        <!-- Servidor de recursos OAuth 2.0: transferencias-service llega con un token client_credentials de banco-auth. -->
+        <!-- Servidor de recursos OAuth 2.0: valida los JWT de banco-auth (usuarios via BFF y servicios con client_credentials). -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
@@ -75,7 +75,7 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
-        <!-- Semana 7: participante de la saga de transferencias (Kafka) y outbox publicado con Resilience4j. -->
+        <!-- Participante de la saga de pagos (Kafka) y outbox publicado con Resilience4j. -->
         <dependency>
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka</artifactId>

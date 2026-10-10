@@ -25,12 +25,12 @@ import org.springframework.test.context.DynamicPropertySource;
 
 /**
  * Descubrimiento del core con la configuracion que entrega el Config Server: el BFF solo conoce el NOMBRE del servicio
- * ({@code https://banco-core-api/api/v1}) y Spring Cloud LoadBalancer lo resuelve en el catalogo. Aqui el catalogo es el
+ * ({@code https://cuentas-service/api/v1}) y Spring Cloud LoadBalancer lo resuelve en el catalogo. Aqui el catalogo es el
  * DiscoveryClient simple de Spring Cloud (el mismo contrato que Eureka) y el core es un simulador HTTPS que exige
  * certificado de cliente: se prueba que el balanceador y el mTLS funcionan juntos.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "management.server.port=0", "banco.core.descubrimiento=true", "banco.core.url=https://banco-core-api/api/v1"})
+        "management.server.port=0", "banco.core.descubrimiento=true", "banco.core.url=https://cuentas-service/api/v1"})
 @ActiveProfiles({"prueba", "tls"})
 class DescubrimientoDelCoreTest {
 
@@ -46,7 +46,7 @@ class DescubrimientoDelCoreTest {
     static void propiedades(DynamicPropertyRegistry registro) {
         core = CoreSimuladoTls.iniciar(Map.of("/api/v1/autenticacion/tarjetas", "tarjeta-autenticada.json"));
         registro.add("banco.certificados", () -> PkiDePrueba.raiz().toString());
-        registro.add("spring.cloud.discovery.client.simple.instances.banco-core-api[0].uri",
+        registro.add("spring.cloud.discovery.client.simple.instances.cuentas-service[0].uri",
                 () -> "https://localhost:" + URI.create(core.url()).getPort());
     }
 
@@ -58,7 +58,7 @@ class DescubrimientoDelCoreTest {
     @Test
     @DisplayName("Sin maquina ni puerto del core: el BFF lo encuentra por nombre y entra con su certificado (mTLS)")
     void coreEncontradoPorNombre() throws Exception {
-        assertThat(URI.create(urlDelCore).getHost()).isEqualTo("banco-core-api");
+        assertThat(URI.create(urlDelCore).getHost()).isEqualTo("cuentas-service");
         assertThat(URI.create(urlDelCore).getPort()).isEqualTo(-1);
 
         HttpResponse<String> respuesta = HttpClient.newBuilder().sslContext(PkiDePrueba.contexto("ATM-001")).build()

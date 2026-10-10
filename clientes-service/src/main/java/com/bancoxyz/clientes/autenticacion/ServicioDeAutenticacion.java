@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <h2>Alerta de seguridad</h2>
  * <p>Al quinto intento fallido el usuario se bloquea 15 minutos y se registra un evento {@code UsuarioBloqueado} en el
  * outbox, en la misma transaccion: el bloqueo y su alerta quedan juntos o no queda ninguno. El publicador lo lleva al
- * topico {@value Topicos#SEGURIDAD_ALERTAS} y notificaciones-service avisa al cliente.</p>
+ * topico {@value Topicos#SEGURIDAD_ALERTAS} y el consumidor de avisos de este mismo servicio avisa al cliente.</p>
  */
 @Service
 public class ServicioDeAutenticacion {

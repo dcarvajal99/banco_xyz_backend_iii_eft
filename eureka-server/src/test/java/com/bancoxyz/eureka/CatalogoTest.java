@@ -30,16 +30,16 @@ class CatalogoTest {
     @DisplayName("Una instancia HTTPS registrada aparece UP en el catalogo en la consulta siguiente")
     void registroVisibleAlInstante() {
         String instancia = """
-                {"instance": {"instanceId": "prueba:banco-core-api:8080", "app": "BANCO-CORE-API", "hostName": "localhost",
-                  "ipAddr": "127.0.0.1", "vipAddress": "banco-core-api", "secureVipAddress": "banco-core-api", "status": "UP",
+                {"instance": {"instanceId": "prueba:cuentas-service:8080", "app": "CUENTAS-SERVICE", "hostName": "localhost",
+                  "ipAddr": "127.0.0.1", "vipAddress": "cuentas-service", "secureVipAddress": "cuentas-service", "status": "UP",
                   "port": {"$": 8080, "@enabled": "false"}, "securePort": {"$": 8080, "@enabled": "true"},
                   "healthCheckUrl": "http://127.0.0.1:9080/actuator/health",
                   "dataCenterInfo": {"@class": "com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo", "name": "MyOwn"}}}""";
-        ResponseEntity<Void> registro = http.exchange("/eureka/apps/BANCO-CORE-API", HttpMethod.POST,
+        ResponseEntity<Void> registro = http.exchange("/eureka/apps/CUENTAS-SERVICE", HttpMethod.POST,
                 new HttpEntity<>(instancia, json()), Void.class);
         assertThat(registro.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
 
-        ResponseEntity<String> catalogo = http.exchange("/eureka/apps/BANCO-CORE-API", HttpMethod.GET,
+        ResponseEntity<String> catalogo = http.exchange("/eureka/apps/CUENTAS-SERVICE", HttpMethod.GET,
                 new HttpEntity<>(json()), String.class);
         assertThat(catalogo.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(catalogo.getBody()).contains("\"status\":\"UP\"").contains("\"securePort\":{\"$\":8080,\"@enabled\":\"true\"}");

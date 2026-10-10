@@ -35,7 +35,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * 504 con reintento, que corresponde a un retiro enviado sin respuesta.
  */
 @ActiveProfiles("prueba")
-@SpringBootTest(properties = {"banco.core.descubrimiento=true", "banco.core.url=https://banco-core-api/api/v1"})
+@SpringBootTest(properties = {"banco.core.descubrimiento=true", "banco.core.url=https://cuentas-service/api/v1"})
 @AutoConfigureMockMvc
 class CoreSinInstanciasTest {
 

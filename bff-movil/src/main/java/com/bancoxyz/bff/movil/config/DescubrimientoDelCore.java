@@ -12,7 +12,7 @@ import org.springframework.web.client.RestClient;
  * Descubrimiento del core por Eureka.
  *
  * <p>Con {@code banco.core.descubrimiento=true} (lo activa el Config Server) la URL del core es el nombre del servicio,
- * {@code https://banco-core-api/api/v1}, y en cada llamada Spring Cloud LoadBalancer la reemplaza por una instancia
+ * {@code https://cuentas-service/api/v1}, y en cada llamada Spring Cloud LoadBalancer la reemplaza por una instancia
  * registrada en Eureka (round robin). El BFF no conoce la maquina ni el puerto del core: si el core se mueve o se agrega
  * una instancia, el BFF la encuentra sin cambiar su configuracion.</p>
  *

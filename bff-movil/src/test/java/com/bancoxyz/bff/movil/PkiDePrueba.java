@@ -30,7 +30,7 @@ import javax.net.ssl.TrustManagerFactory;
  */
 public final class PkiDePrueba {
 
-    static final List<String> IDENTIDADES = List.of("bff-movil", "banco-core-api");
+    static final List<String> IDENTIDADES = List.of("bff-movil", "cuentas-service");
 
     private static final String CLAVE = "clave-de-prueba";
     private static final Map<String, KeyStore.PrivateKeyEntry> ENTRADAS = new LinkedHashMap<>();

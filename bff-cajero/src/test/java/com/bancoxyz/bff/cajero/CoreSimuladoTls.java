@@ -36,7 +36,7 @@ final class CoreSimuladoTls {
 
     private CoreSimuladoTls(Map<String, String> contratosPorRuta) throws IOException {
         this.contratosPorRuta = contratosPorRuta;
-        SSLContext contexto = PkiDePrueba.contexto("banco-core-api");
+        SSLContext contexto = PkiDePrueba.contexto("cuentas-service");
         servidor = HttpsServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         servidor.setHttpsConfigurator(new HttpsConfigurator(contexto) {
             @Override
