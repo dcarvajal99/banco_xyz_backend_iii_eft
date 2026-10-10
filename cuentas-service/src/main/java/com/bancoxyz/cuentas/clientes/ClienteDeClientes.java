@@ -4,6 +4,7 @@ import com.bancoxyz.cuentas.config.PropiedadesCuentas;
 import com.bancoxyz.cuentas.cuenta.Cuenta;
 import com.bancoxyz.cuentas.cuenta.RepositorioCuentas;
 import com.bancoxyz.cuentas.error.Errores;
+import com.bancoxyz.cuentas.config.FiltroCorrelacion;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -41,6 +42,13 @@ public class ClienteDeClientes {
         this.cuentas = cuentas;
         this.http = builder.baseUrl(propiedades.clientes().url())
                 .requestInterceptor(TokenDeServicio.interceptor(gestorDeTokens))
+                // El id de correlacion de esta solicitud viaja con la llamada: la operacion se sigue en los logs de ambos.
+                .requestInterceptor((solicitud, cuerpo, ejecucion) -> {
+                    if (FiltroCorrelacion.actual() != null) {
+                        solicitud.getHeaders().set(FiltroCorrelacion.ENCABEZADO, FiltroCorrelacion.actual());
+                    }
+                    return ejecucion.execute(solicitud, cuerpo);
+                })
                 .defaultStatusHandler(HttpStatusCode::is4xxClientError, (solicitud, respuesta) -> {
                     // 404: el cliente no existe. No es una falla de clientes-service (el circuito lo ignora).
                     throw Errores.clienteNoEncontrado();

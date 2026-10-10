@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 import com.bancoxyz.bff.web.config.PropiedadesWeb;
 import com.bancoxyz.bff.web.error.ErrorDeServicio;
 import com.bancoxyz.bff.web.error.ServicioNoDisponible;
+import com.bancoxyz.bff.web.config.FiltroCorrelacion;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
@@ -44,6 +45,13 @@ public class ClienteServicios {
         relevo.setClientRegistrationIdResolver(solicitud -> REGISTRO);
         this.http = builder
                 .requestInterceptor(relevo)
+                // El id de correlacion de esta solicitud viaja con la llamada: la operacion se sigue en los logs de ambos.
+                .requestInterceptor((solicitud, cuerpo, ejecucion) -> {
+                    if (FiltroCorrelacion.actual() != null) {
+                        solicitud.getHeaders().set(FiltroCorrelacion.ENCABEZADO, FiltroCorrelacion.actual());
+                    }
+                    return ejecucion.execute(solicitud, cuerpo);
+                })
                 .defaultStatusHandler(estado -> estado.is4xxClientError() || estado.value() == 503, (solicitud, respuesta) -> {
                     byte[] cuerpo = respuesta.getBody().readAllBytes();
                     JsonNode problema = leer(json, cuerpo);

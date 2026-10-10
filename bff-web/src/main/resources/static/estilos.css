@@ -31,6 +31,8 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
 th { color: var(--tenue); font-weight: 600; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Tablas de cifras: todas las columnas despues de la primera van a la derecha, como sus encabezados. */
+#resumen-diario td:nth-child(n+2), #estados td:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
 .formulario { display: grid; gap: 10px; }
 .formulario.en-linea { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: end; }
 label { display: grid; gap: 4px; font-size: 13px; color: var(--tenue); }

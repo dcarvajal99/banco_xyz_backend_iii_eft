@@ -5,6 +5,7 @@ import java.util.Objects;
 import com.bancoxyz.pagos.config.PropiedadesPagos;
 import com.bancoxyz.pagos.error.ErrorDeNegocio;
 import com.bancoxyz.pagos.error.Errores;
+import com.bancoxyz.pagos.config.FiltroCorrelacion;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -36,6 +37,13 @@ public class ClienteDeCuentas {
                             OAuth2AuthorizedClientManager gestorDeTokens) {
         this.http = builder.baseUrl(propiedades.cuentasUrl())
                 .requestInterceptor(TokenDeServicio.interceptor(gestorDeTokens))
+                // El id de correlacion de esta solicitud viaja con la llamada: la operacion se sigue en los logs de ambos.
+                .requestInterceptor((solicitud, cuerpo, ejecucion) -> {
+                    if (FiltroCorrelacion.actual() != null) {
+                        solicitud.getHeaders().set(FiltroCorrelacion.ENCABEZADO, FiltroCorrelacion.actual());
+                    }
+                    return ejecucion.execute(solicitud, cuerpo);
+                })
                 .defaultStatusHandler(HttpStatusCode::is4xxClientError, (solicitud, respuesta) -> {
                     throw Errores.cuentaOrigenNoEncontrada();
                 })

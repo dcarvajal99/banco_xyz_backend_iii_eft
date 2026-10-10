@@ -198,6 +198,7 @@ services:
     mem_limit: 448m
 
   # ------------------------------------------------------------------------------------- microservicios (red interna)
+  # 512m: consumidores de Kafka, JPA y el pool de la base usan mas memoria fuera del heap que los BFF.
   clientes-service:
     <<: *java
     build: clientes-service
@@ -210,7 +211,7 @@ services:
       db: *listo
       kafka: *listo
       banco-xyz-batch: { condition: service_completed_successfully }
-    mem_limit: 448m
+    mem_limit: 512m
 
   cuentas-service:
     <<: *java
@@ -225,7 +226,7 @@ services:
       db: *listo
       kafka: *listo
       banco-xyz-batch: { condition: service_completed_successfully }
-    mem_limit: 448m
+    mem_limit: 512m
 
   pagos-service:
     <<: *java
@@ -238,7 +239,7 @@ services:
       <<: *infraestructura
       db: *listo
       kafka: *listo
-    mem_limit: 448m
+    mem_limit: 512m
 
   # ------------------------------------------------------------------------------------------- BFF: un canal cada uno
   bff-web:
