@@ -67,7 +67,7 @@ SIN_CUERPO=2 llamar GET "$WEB/web/api/panel" "${SESION_WEB[@]}" > /dev/null
 python3 - "$CUERPO" <<'PY'
 import json, sys
 for a in (json.loads(sys.argv[1]).get("avisos") or [])[:4]:
-    print("  %s %-24s %s %s" % (a.get("creadaEn", "")[:19], a.get("tipo"), "[seguridad]" if a.get("seguridad") else "           ", a.get("mensaje")))
+    print("  %s %-24s %s %s" % (a.get("creadaEn", "")[:19], a.get("tipo"), "[seguridad]" if a.get("seguridad") else "           ", (a.get("mensaje") or "")[:88]))
 PY
 
 paso "Entrega al menos una vez: se reinyecta el mismo PagoSolicitado y cuentas-service lo ignora (evento_procesado)"

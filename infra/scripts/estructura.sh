@@ -43,7 +43,7 @@ paso "Como se encuentran sin conocerse: configuracion central, descubrimiento y 
 for p in bff-web bff-movil bff-cajero clientes-service cuentas-service pagos-service banco-auth; do
   urls=$(grep -hE "^banco\..*url=https://[a-z-]+/" "config-server/configuracion/$p.properties" | sed 's/.*https:\/\/\([a-z-]*\)\/.*/\1/' | sort -u | paste -sd, - | sed 's/,/, /g')
   topicos=$(find "$p/src/main/java" -name Topicos.java -exec sed -n 's/.*String [A-Z_]* = "\([a-z.]*\)";/\1/p' {} \; 2>/dev/null | grep -v DLT | sort -u | paste -sd, - | sed 's/,/, /g')
-  printf '  %-17s llama por Eureka a: %-48s Kafka: %s\n' "$p" "${urls:--}" "${topicos:--}"
+  printf '  %-16s Eureka: %-48s Kafka: %s\n' "$p" "${urls:--}" "${topicos:--}"
 done
 
 paste_compose=$(awk '/^services:/ {s=1; next} /^[a-z]/ {s=0} s && /^  [a-z][a-z0-9-]*:$/ {sub(":", ""); printf "%s ", $1}' docker-compose.yaml)

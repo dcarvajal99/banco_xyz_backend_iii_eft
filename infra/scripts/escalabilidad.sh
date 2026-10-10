@@ -18,25 +18,6 @@ for app in sorted(json.load(sys.stdin)["applications"]["application"], key=lambd
         print("  %-17s %d instancia(s): %s" % (app["name"].lower(), len(app["instance"]), ids))'
 }
 
-# esperar_eureka SERVICIO N: espera a que Eureka tenga N instancias UP del servicio. Registrada no basta: el estado de
-# salud llega a Eureka unos segundos despues (cada 5 s) y LoadBalancer solo reparte entre las UP.
-esperar_eureka() {
-  local app inicio=$SECONDS n=0
-  app=$(printf %s "$1" | tr a-z A-Z)
-  while [ $((SECONDS - inicio)) -lt 90 ]; do
-    n=$(curl -s -H "Accept: application/json" "$EUREKA1/eureka/apps/$app" | python3 -c '
-import json, sys
-try:
-    print(sum(1 for i in json.load(sys.stdin)["application"]["instance"] if i["status"] == "UP"))
-except Exception:
-    print(0)')
-    if [ "$n" -ge "$2" ]; then nota "$1: $n instancias UP en Eureka a los $((SECONDS - inicio)) s"; return 0; fi
-    sleep 2
-  done
-  nota "$1: solo $n instancias UP en Eureka tras 90 s"
-  return 1
-}
-
 paso "Antes: una instancia de cada microservicio"
 instancias_eureka
 

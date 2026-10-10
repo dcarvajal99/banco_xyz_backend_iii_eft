@@ -51,7 +51,8 @@ claves = ["server.port", "management.server.port", "management.endpoints.web.exp
 for clave in claves:
     for f in fuentes:
         if clave in f["source"]:
-            print("  %-66s %-42s (%s)" % (clave, str(f["source"][clave])[:42], f["name"].split("/")[-1]))
+            valor = str(f["source"][clave])
+            print("  %-66s %-36s %s" % (clave, valor if len(valor) <= 36 else valor[:35] + "…", f["name"].split("/")[-1].replace(".properties", "")))
             break'
 jar=$(docker exec "$("${COMPOSE[@]}" ps -q cuentas-service | head -1)" sh -c 'cat /app/BOOT-INF/classes/application.properties 2>/dev/null' \
   | grep -cE '^(management\.|eureka\.|resilience4j\.)' || true)

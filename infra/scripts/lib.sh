@@ -244,7 +244,7 @@ partes = sys.argv[1].split(".")
 dec = lambda s: json.loads(base64.urlsafe_b64decode(s + "=" * (-len(s) % 4)))
 print("  encabezado: " + json.dumps(dec(partes[0]), ensure_ascii=False))
 claims = dec(partes[1])
-for k in ("iat", "nbf", "jti", "sid", "auth_time", "azp", "at_hash"):
+for k in ("iat", "nbf", "jti", "sid", "auth_time", "at_hash"):
     claims.pop(k, None)
 print("  claims:     " + json.dumps(claims, ensure_ascii=False))
 PY
@@ -450,7 +450,7 @@ filas.sort(key=lambda f: (f[0], f[3]))
 print("  %-22s %-20s %-4s %-6s %-6s %s" % ("EVENTO", "TOPICO", "PART", "OFFSET", "CLAVE", "DATOS"))
 for _, topico, particion, offset, clave, e in filas:
     datos = ["%s=%s" % (c, e[c]) for c in ("operacion", "monto", "motivo", "saldoOrigen", "saldoDestino", "detalle") if e.get(c) is not None]
-    print("  %-22s %-20s %-4s %-6s %-6s %s" % (e.get("tipo"), topico, particion, offset, clave, " ".join(datos)[:90]))
+    print("  %-22s %-20s %-4s %-6s %-6s %s" % (e.get("tipo"), topico, particion, offset, clave, " ".join(datos)[:72]))
 print("  (%d eventos del pago %s)" % (len(filas), buscado[:8]))
 PY
   rm -rf "$dir"
@@ -527,4 +527,23 @@ asegurar_saldo() {
     "$WEB/web/api/pagos/depositos" --data-raw "{\"cuentaDestino\":$1,\"monto\":$falta}")
   esperar_pago "$(campo id "$respuesta")" 20
   nota "deposito previo de \$$falta en la cuenta $1 para repetir la prueba ($ESTADO_PAGO)"
+}
+
+# esperar_eureka SERVICIO N: espera a que Eureka tenga N instancias UP del servicio. Registrada no basta: el estado de
+# salud llega a Eureka unos segundos despues (cada 5 s) y LoadBalancer solo reparte entre las UP.
+esperar_eureka() {
+  local app inicio=$SECONDS n=0
+  app=$(printf %s "$1" | tr a-z A-Z)
+  while [ $((SECONDS - inicio)) -lt 90 ]; do
+    n=$(curl -s -H "Accept: application/json" "$EUREKA1/eureka/apps/$app" | python3 -c '
+import json, sys
+try:
+    print(sum(1 for i in json.load(sys.stdin)["application"]["instance"] if i["status"] == "UP"))
+except Exception:
+    print(0)')
+    if [ "$n" -ge "$2" ]; then nota "$1: $n instancias UP en Eureka a los $((SECONDS - inicio)) s"; return 0; fi
+    sleep 2
+  done
+  nota "$1: solo $n instancias UP en Eureka tras 90 s"
+  return 1
 }

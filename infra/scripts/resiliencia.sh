@@ -54,7 +54,7 @@ mostrar_circuito bff-web:9090 clientes bff-web
 mostrar_circuito cuentas-service:9100 clientes cuentas-service
 
 paso "Se repone clientes-service"
-"${COMPOSE[@]}" start clientes-service 2>&1 | sed 's/^/  /'
+docker start $("${COMPOSE[@]}" ps -aq clientes-service) > /dev/null && nota "docker start clientes-service"
 esperar_sano clientes-service
 
 # -------------------------------------------------------------------------------------------- falla 2: cuentas-service
@@ -88,7 +88,7 @@ curl -s -o /dev/null "${TLS[@]}" "${SESION_CLIENTE[@]}" "$WEB/web/api/panel"
 nota "respuesta con el circuito abierto en $(python3 -c "import time; print(round((time.time() - $inicio) * 1000))") ms"
 
 paso "Se repone cuentas-service: consume el PagoSolicitado pendiente y la transferencia se completa sola"
-"${COMPOSE[@]}" start cuentas-service 2>&1 | sed 's/^/  /'
+docker start $("${COMPOSE[@]}" ps -aq cuentas-service) > /dev/null && nota "docker start cuentas-service"
 esperar_sano cuentas-service
 SESION_WEB=("${SESION_CLIENTE[@]}")
 esperar_pago "$PAGO" 60
@@ -97,8 +97,10 @@ comprobar "estado final" "$ESTADO_PAGO" "COMPLETADO"
 comprobar "debito aplicado una vez" "$(python3 -c "print(round($A_ORIGEN - $(saldo "$CUENTA")))")" "500"
 
 paso "El circuito de bff-web pasa a HALF_OPEN y vuelve a CLOSED con llamadas exitosas"
-# Tras la espera del circuito (15 s en la nube) deja pasar llamadas de prueba; cuando bff-web ya ve la replica repuesta en
-# Eureka, salen bien y el circuito se cierra. Se reintenta el panel hasta 90 s.
+# Las llamadas de prueba (3 en HALF_OPEN) se hacen cuando bff-web ya ve la replica repuesta: UP en Eureka y su copia del
+# catalogo renovada (5 s) y fuera de la cache del LoadBalancer (5 s). Antes, fallarian y el circuito volveria a OPEN.
+esperar_eureka cuentas-service 1
+sleep 12
 inicio=$SECONDS
 until [ "$(curl -s -o /dev/null -w '%{http_code}' "${TLS[@]}" "${SESION_CLIENTE[@]}" "$WEB/web/api/panel")" = "200" ] \
   || [ $((SECONDS - inicio)) -ge 90 ]; do sleep 2; done
