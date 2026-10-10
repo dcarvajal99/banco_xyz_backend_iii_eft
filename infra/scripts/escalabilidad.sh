@@ -14,8 +14,27 @@ instancias_eureka() {
 import json, sys
 for app in sorted(json.load(sys.stdin)["applications"]["application"], key=lambda a: a["name"]):
     if app["name"] in ("CUENTAS-SERVICE", "PAGOS-SERVICE", "CLIENTES-SERVICE"):
-        ids = ", ".join(sorted(i["instanceId"] + " (" + i["ipAddr"] + ")" for i in app["instance"]))
+        ids = ", ".join(sorted(i["instanceId"] + " " + i["status"] + " (" + i["ipAddr"] + ")" for i in app["instance"]))
         print("  %-17s %d instancia(s): %s" % (app["name"].lower(), len(app["instance"]), ids))'
+}
+
+# esperar_eureka SERVICIO N: espera a que Eureka tenga N instancias UP del servicio. Registrada no basta: el estado de
+# salud llega a Eureka unos segundos despues (cada 5 s) y LoadBalancer solo reparte entre las UP.
+esperar_eureka() {
+  local app inicio=$SECONDS n=0
+  app=$(printf %s "$1" | tr a-z A-Z)
+  while [ $((SECONDS - inicio)) -lt 90 ]; do
+    n=$(curl -s -H "Accept: application/json" "$EUREKA1/eureka/apps/$app" | python3 -c '
+import json, sys
+try:
+    print(sum(1 for i in json.load(sys.stdin)["application"]["instance"] if i["status"] == "UP"))
+except Exception:
+    print(0)')
+    if [ "$n" -ge "$2" ]; then nota "$1: $n instancias UP en Eureka a los $((SECONDS - inicio)) s"; return 0; fi
+    sleep 2
+  done
+  nota "$1: solo $n instancias UP en Eureka tras 90 s"
+  return 1
 }
 
 paso "Antes: una instancia de cada microservicio"
@@ -26,17 +45,18 @@ paso "docker compose up -d --no-deps ${ESCALAR[*]} (sin tocar el resto)"
 for s in clientes-service cuentas-service pagos-service; do esperar_sano "$s" 240; done
 "${COMPOSE[@]}" ps --format 'table {{.Name}}\t{{.Status}}' cuentas-service pagos-service clientes-service | sed 's/^/  /'
 
-paso "Eureka: cada replica registrada con su propio id (nombre del contenedor) e IP"
-sleep 5
+paso "Eureka: cada replica registrada con su propio id (nombre del contenedor), su estado e IP"
+for s in cuentas-service pagos-service clientes-service; do esperar_eureka "$s" "$REPLICAS"; done
 instancias_eureka
 for s in cuentas-service pagos-service clientes-service; do
-  n=$(curl -s -H "Accept: application/json" "$EUREKA1/eureka/apps/$(printf %s "$s" | tr a-z A-Z)" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["application"]["instance"]))')
-  comprobar "instancias de $s en Eureka" "$n" "$REPLICAS"
+  n=$(curl -s -H "Accept: application/json" "$EUREKA1/eureka/apps/$(printf %s "$s" | tr a-z A-Z)" \
+    | python3 -c 'import json,sys; print(sum(1 for i in json.load(sys.stdin)["application"]["instance"] if i["status"] == "UP"))')
+  comprobar "instancias UP de $s en Eureka" "$n" "$REPLICAS"
 done
 
 paso "Los BFF reparten la carga entre las replicas (Spring Cloud LoadBalancer, round robin)"
 sesion_web diana.prince "$CLAVE_CLIENTES"
-sleep 12   # catalogo de Eureka cada 5 s + cache del LoadBalancer de 5 s (Config Server)
+sleep 12   # los BFF renuevan su copia del catalogo cada 5 s y el LoadBalancer la guarda 5 s
 marca=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 for _ in $(seq 1 20); do curl -s -o /dev/null "${TLS[@]}" "${SESION_WEB[@]}" "$WEB/web/api/panel"; done
 sleep 1

@@ -165,6 +165,9 @@ aws kafka create-cluster-v2 --cluster-name banco-xyz --provisioned file://msk.js
 ```
 
 - Cada servicio crea **su propio esquema** con Flyway al arrancar (clientes, cuentas, pagos); el batch crea `migracion`.
+- **Conexiones:** cada tarea abre su pool (máximo 15 a 20, 2 en reposo). Con el autoescalado al máximo (6 tareas de cada
+  microservicio) se necesitan hasta ~300 conexiones: se ajusta `max_connections` en el grupo de parámetros de RDS o se
+  pone **RDS Proxy** delante. En el compose la base acepta 200 (tres réplicas de cada servicio).
   Lo ideal es un usuario de base por servicio con permisos solo sobre su esquema.
 - En MSK los tópicos se crean con **3 particiones y factor de replicación 3** (en el compose es 1 porque hay un solo
   broker): `banco.kafka.particiones` y la replicación se ajustan en `application-nube.properties` del Config Server.

@@ -97,10 +97,16 @@ comprobar "estado final" "$ESTADO_PAGO" "COMPLETADO"
 comprobar "debito aplicado una vez" "$(python3 -c "print(round($A_ORIGEN - $(saldo "$CUENTA")))")" "500"
 
 paso "El circuito de bff-web pasa a HALF_OPEN y vuelve a CLOSED con llamadas exitosas"
-sleep 11
+# Tras la espera del circuito (15 s en la nube) deja pasar llamadas de prueba; cuando bff-web ya ve la replica repuesta en
+# Eureka, salen bien y el circuito se cierra. Se reintenta el panel hasta 90 s.
+inicio=$SECONDS
+until [ "$(curl -s -o /dev/null -w '%{http_code}' "${TLS[@]}" "${SESION_CLIENTE[@]}" "$WEB/web/api/panel")" = "200" ] \
+  || [ $((SECONDS - inicio)) -ge 90 ]; do sleep 2; done
 for _ in 1 2 3; do curl -s -o /dev/null "${TLS[@]}" "${SESION_CLIENTE[@]}" "$WEB/web/api/panel"; done
+nota "panel web de nuevo en 200 a los $((SECONDS - inicio)) s"
 mostrar_circuito bff-web:9090 cuentas bff-web
-eventos_circuito bff-web:9090 cuentas 3
+eventos_circuito bff-web:9090 cuentas 4
+comprobar "estado del circuito cuentas de bff-web" "$(circuito bff-web:9090 cuentas)" "CLOSED"
 
 rm -f "$JAR_CLIENTE" "$JAR_EJECUTIVO"
 resumen_final
