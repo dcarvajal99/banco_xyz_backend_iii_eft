@@ -11,12 +11,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.client.OAuth2ClientHttpRequestInterceptor;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -44,8 +44,16 @@ public class ClienteServicios {
         relevo.setClientRegistrationIdResolver(solicitud -> REGISTRO);
         this.http = builder
                 .requestInterceptor(relevo)
-                .defaultStatusHandler(HttpStatusCode::is4xxClientError, (solicitud, respuesta) -> {
-                    throw new ErrorDeServicio(respuesta.getStatusCode().value(), leer(json, respuesta.getBody().readAllBytes()));
+                .defaultStatusHandler(estado -> estado.is4xxClientError() || estado.value() == 503, (solicitud, respuesta) -> {
+                    byte[] cuerpo = respuesta.getBody().readAllBytes();
+                    JsonNode problema = leer(json, cuerpo);
+                    // Un 503 con codigo es una respuesta controlada: el servicio esta arriba pero le falta una
+                    // dependencia (p. ej. CLIENTES_NO_DISPONIBLE). Llega tal cual y no abre el circuito de ese servicio.
+                    if (respuesta.getStatusCode().is4xxClientError() || problema.hasNonNull("codigo")) {
+                        throw new ErrorDeServicio(respuesta.getStatusCode().value(), problema);
+                    }
+                    throw HttpServerErrorException.create(respuesta.getStatusCode(), respuesta.getStatusText(),
+                            respuesta.getHeaders(), cuerpo, null);
                 })
                 .build();
     }
@@ -70,8 +78,8 @@ public class ClienteServicios {
     }
 
     /**
-     * Circuito por servicio. Sin TimeLimiter (spring.cloud.circuitbreaker.resilience4j.disable-time-limiter): la llamada
-     * corre en el hilo de la solicitud, donde estan la sesion y el token del usuario.
+     * Circuito por servicio. Sin TimeLimiter, sin pool de hilos y con bulkhead de semaforo (application.properties): la llamada corre en
+     * el hilo de la solicitud, donde estan la sesion y el token del usuario.
      */
     private <T> T protegida(Servicio servicio, Supplier<T> llamada) {
         return circuitos.create(servicio.circuito()).run(llamada, causa -> {

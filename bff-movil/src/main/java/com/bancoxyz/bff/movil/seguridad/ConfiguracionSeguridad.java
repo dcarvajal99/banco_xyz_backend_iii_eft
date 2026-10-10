@@ -82,8 +82,10 @@ public class ConfiguracionSeguridad {
                 .headers(h -> h.httpStrictTransportSecurity(hsts -> hsts.maxAgeInSeconds(31_536_000).includeSubDomains(true))
                         .referrerPolicy(r -> r.policy(ReferrerPolicy.NO_REFERRER)))
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
-                                "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
+                        // Actuator: solo en el puerto de operacion, que no sale de la red interna. Lectura libre (salud,
+                        // metricas, circuitos); cualquier escritura exige autenticacion.
+                        .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/movil/v1/inicio", "/movil/v1/cuentas/*/movimientos")
                         .hasAuthority("SCOPE_cuentas.leer")
                         .requestMatchers(HttpMethod.POST, "/movil/v1/transferencias").hasAuthority("SCOPE_pagos.escribir")

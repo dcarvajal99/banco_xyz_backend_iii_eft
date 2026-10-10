@@ -44,8 +44,10 @@ public class ConfiguracionSeguridad {
                         .referrerPolicy(r -> r.policy(ReferrerPolicy.NO_REFERRER))
                         .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny))
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
-                                "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
+                        // Actuator: solo en el puerto de operacion, que no sale de la red interna. Lectura libre (salud,
+                        // metricas, circuitos); cualquier escritura exige autenticacion.
+                        .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/pagos/**").hasAuthority("SCOPE_pagos.escribir")
                         .requestMatchers(HttpMethod.GET, "/api/v1/pagos", "/api/v1/pagos/*").hasAuthority("SCOPE_pagos.leer")
                         .anyRequest().denyAll());

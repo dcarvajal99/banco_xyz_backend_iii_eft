@@ -1,5 +1,6 @@
 package com.bancoxyz.bff.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oidcLogin;
 import static org.springframework.test.web.client.ExpectedCount.manyTimes;
@@ -120,7 +121,7 @@ class WebIntegracionTest {
         mvc.perform(post("/web/api/pagos/transferencias").with(sesion("diana.prince", 4L, "CLIENTE"))
                         .header("Idempotency-Key", "web-0001").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cuentaOrigen\":101,\"cuentaDestino\":102,\"monto\":1000}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.codigo").value("CSRF_INVALIDO"));
         servicios.expect(requestTo(PAGOS + "/pagos/transferencias")).andExpect(method(HttpMethod.POST))
                 .andExpect(header("Idempotency-Key", "web-0001")).andExpect(header(HttpHeaders.AUTHORIZATION, BEARER))
                 .andRespond(withStatus(HttpStatus.ACCEPTED).contentType(MediaType.APPLICATION_JSON)
@@ -141,6 +142,19 @@ class WebIntegracionTest {
                         .header("Idempotency-Key", "web-0002").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cuentaOrigen\":101,\"cuentaDestino\":101,\"monto\":10}"))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.codigo").value("MISMA_CUENTA"));
+    }
+
+    @Test
+    @DisplayName("Un 503 con codigo (el servicio esta arriba pero le falta una dependencia) llega tal cual y no abre el circuito")
+    void respuestaControladaDeIndisponibilidad() throws Exception {
+        servicios.expect(manyTimes(), requestTo(CUENTAS + "/cuentas")).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON).body("{\"codigo\":\"CLIENTES_NO_DISPONIBLE\",\"status\":503}"));
+        for (int i = 0; i < 6; i++) {
+            mvc.perform(post("/web/api/ejecutivo/cuentas").with(sesion("ejecutivo", null, "EJECUTIVO")).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"clienteId\":999999,\"tipo\":\"ahorro\"}"))
+                    .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.codigo").value("CLIENTES_NO_DISPONIBLE"));
+        }
+        assertThat(circuitos.circuitBreaker("cuentas").getState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
     @Test

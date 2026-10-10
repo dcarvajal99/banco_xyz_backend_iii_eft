@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -22,8 +23,10 @@ import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedCli
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfException;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
@@ -66,15 +69,18 @@ public class ConfiguracionSeguridad {
                 .csrf(c -> c.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
                 .addFilterAfter(new CookieCsrf(), CsrfFilter.class)
-                .exceptionHandling(e -> e.defaultAuthenticationEntryPointFor(api401(json),
-                        PathPatternRequestMatcher.withDefaults().matcher("/web/api/**")))
+                .exceptionHandling(e -> e
+                        .defaultAuthenticationEntryPointFor(api401(json), PathPatternRequestMatcher.withDefaults().matcher("/web/api/**"))
+                        .defaultAccessDeniedHandlerFor(api403(json), PathPatternRequestMatcher.withDefaults().matcher("/web/api/**")))
                 .headers(h -> h
                         .httpStrictTransportSecurity(hsts -> hsts.maxAgeInSeconds(31_536_000).includeSubDomains(true))
                         .contentSecurityPolicy(c -> c.policyDirectives("default-src 'self'; frame-ancestors 'none'")))
                 .authorizeHttpRequests(a -> a
+                        // Actuator: solo en el puerto de operacion, que no sale de la red interna. Lectura libre (salud,
+                        // metricas, circuitos); cualquier escritura exige autenticacion.
+                        .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
                         .requestMatchers("/", "/index.html", "/app.js", "/estilos.css", "/favicon.svg", "/error",
-                                "/web/api/sesion", "/actuator/health", "/actuator/health/**", "/actuator/info",
-                                "/actuator/prometheus", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                                "/web/api/sesion", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated());
         return http.build();
     }
@@ -95,6 +101,19 @@ public class ConfiguracionSeguridad {
             response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
             json.writeValue(response.getOutputStream(), Problemas.crear(HttpStatus.UNAUTHORIZED, "NO_AUTENTICADO",
                     "Inicie sesion en el banco", request.getRequestURI()));
+        };
+    }
+
+    /** 403 de la API en el mismo ProblemDetail: escritura sin token CSRF valido, o recurso de otro rol. */
+    private static AccessDeniedHandler api403(ObjectMapper json) {
+        return (request, response, ex) -> {
+            boolean csrf = ex instanceof CsrfException;
+            response.setStatus(HttpStatus.FORBIDDEN.value());
+            response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+            json.writeValue(response.getOutputStream(), Problemas.crear(HttpStatus.FORBIDDEN,
+                    csrf ? "CSRF_INVALIDO" : "ACCESO_DENEGADO",
+                    csrf ? "Falta el token CSRF de la pagina (encabezado X-XSRF-TOKEN)" : "No tiene permiso para esta operacion",
+                    request.getRequestURI()));
         };
     }
 

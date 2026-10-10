@@ -99,10 +99,10 @@ public class ConfiguracionSeguridad {
                                 PathPatternRequestMatcher.withDefaults().matcher("/cajero/v1/**"),
                                 new StaticHeadersWriter("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"))))
                 .authorizeHttpRequests(a -> a
-                        // Las metricas solo existen en el puerto de operacion (127.0.0.1, perfil tls).
-                        .requestMatchers("/actuator/health", "/actuator/info", "/actuator/circuitbreakers",
-                                "/actuator/circuitbreakerevents", "/actuator/metrics", "/actuator/metrics/**", "/v3/api-docs/**",
-                                "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
+                        // Actuator: solo en el puerto de operacion, que no sale de la red interna. Lectura libre (salud,
+                        // metricas, circuitos); cualquier escritura exige autenticacion.
+                        .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
                         .requestMatchers(HttpMethod.POST, "/cajero/v1/sesiones").permitAll()
                         .requestMatchers("/cajero/v1/**").authenticated()
                         .anyRequest().denyAll())

@@ -9,8 +9,13 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.web.context.request.RequestContextHolder;
 
-/** banco-auth no existe en las pruebas: el access token del usuario de la sesion es fijo. */
+/**
+ * banco-auth no existe en las pruebas: el access token del usuario de la sesion es fijo. Igual que el gestor real
+ * (DefaultOAuth2AuthorizedClientManager), falla si la llamada no corre en el hilo de la solicitud: asi una prueba
+ * detecta un circuito que ejecute la llamada en otro hilo.
+ */
 @Configuration
 public class TokenDePrueba {
 
@@ -19,7 +24,12 @@ public class TokenDePrueba {
     @Bean
     @Primary
     OAuth2AuthorizedClientManager gestorDeTokensDePrueba(ClientRegistrationRepository registros) {
-        return solicitud -> new OAuth2AuthorizedClient(registros.findByRegistrationId("banco-auth"), "usuario",
-                new OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER, TOKEN, Instant.now(), Instant.now().plusSeconds(300)));
+        return solicitud -> {
+            if (RequestContextHolder.getRequestAttributes() == null) {
+                throw new IllegalArgumentException("servletRequest cannot be null");
+            }
+            return new OAuth2AuthorizedClient(registros.findByRegistrationId("banco-auth"), "usuario",
+                    new OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER, TOKEN, Instant.now(), Instant.now().plusSeconds(300)));
+        };
     }
 }

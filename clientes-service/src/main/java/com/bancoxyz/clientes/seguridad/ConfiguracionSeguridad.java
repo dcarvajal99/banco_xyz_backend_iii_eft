@@ -83,8 +83,10 @@ public class ConfiguracionSeguridad {
                 .addFilterAfter(new FiltroCertificadoDeLlamante(problemas, propiedades.relevosPermitidos()),
                         BearerTokenAuthenticationFilter.class)
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus",
-                                "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
+                        // Actuator: solo en el puerto de operacion, que no sale de la red interna. Lectura libre (salud,
+                        // metricas, circuitos); cualquier escritura exige autenticacion.
+                        .requestMatchers(HttpMethod.GET, "/actuator/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/clientes", "/api/v1/clientes/*", "/api/v1/clientes/*/avisos")
                         .hasAuthority("SCOPE_clientes.leer")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/clientes/*/perfil").hasAuthority("SCOPE_clientes.perfil")
