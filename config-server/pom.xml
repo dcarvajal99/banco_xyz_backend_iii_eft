@@ -45,7 +45,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-        <!-- Semana 7: el Config Server exige usuario y clave (Basic) ademas del certificado de cliente. -->
+        <!-- El Config Server exige usuario y clave (Basic) ademas del certificado de cliente. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>

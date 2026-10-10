@@ -3,8 +3,10 @@ package com.bancoxyz.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.DisplayName;
@@ -18,13 +20,17 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
- * El Config Server sobre el repositorio real (banco-xyz-cloud/configuracion/), sin TLS (perfil native solo): exige
- * credenciales, entrega a cada servicio su archivo y el comun, y el repositorio no contiene secretos.
+ * El Config Server sobre el repositorio real (config-server/configuracion/), sin TLS (perfil native solo): exige
+ * credenciales, entrega a cada servicio su archivo y el comun, ajusta por entorno y no contiene secretos.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "spring.profiles.active=native", "management.server.port=0",
-        "spring.cloud.config.server.native.search-locations=file:../configuracion"})
+        "spring.cloud.config.server.native.search-locations=file:./configuracion"})
 class ConfiguracionCentralTest {
+
+    /** Los siete servicios que leen su configuracion del Config Server (el batch y Eureka no). */
+    private static final List<String> SERVICIOS = List.of("banco-auth", "clientes-service", "cuentas-service",
+            "pagos-service", "bff-web", "bff-movil", "bff-cajero");
 
     @Autowired
     private TestRestTemplate http;
@@ -32,56 +38,72 @@ class ConfiguracionCentralTest {
     @Test
     @DisplayName("Sin usuario y clave, el Config Server responde 401 y no entrega nada")
     void exigeCredenciales() {
-        ResponseEntity<String> respuesta = http.getForEntity("/transferencias-service/default", String.class);
-        assertThat(respuesta.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(http.getForEntity("/cuentas-service/default", String.class).getStatusCode())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(http.withBasicAuth("configuracion", "clave-equivocada")
-                .getForEntity("/transferencias-service/default", String.class).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                .getForEntity("/cuentas-service/default", String.class).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    @DisplayName("transferencias-service recibe su archivo y el comun: el core por nombre, Eureka con dos nodos, Kafka y JWT")
-    void configuracionDeTransferencias() {
-        JsonNode entorno = entorno("transferencias-service");
-        assertThat(fuentes(entorno)).containsExactly("file:../configuracion/transferencias-service.properties",
-                "file:../configuracion/application.properties");
+    @DisplayName("cuentas-service recibe su archivo y el comun: puertos, management, Eureka, Kafka, JWT y circuitos")
+    void configuracionDeCuentas() {
+        JsonNode entorno = entorno("cuentas-service", "default");
+        assertThat(archivos(entorno)).containsExactly("cuentas-service.properties", "application.properties");
         assertThat(propiedades(entorno))
-                .containsEntry("banco.core.url", "https://banco-core-api/api/v1")
-                .containsEntry("banco.core.descubrimiento", "true")
-                .containsEntry("eureka.client.service-url.defaultZone", "http://127.0.0.1:8761/eureka/,http://localhost:8762/eureka/")
+                .containsEntry("server.port", "8100")
+                .containsEntry("management.server.port", "9100")
+                .containsEntry("banco.cuentas.clientes.url", "https://clientes-service/api/v1")
+                .containsEntry("eureka.instance.instance-id", "${spring.application.name}:${HOSTNAME:local}:${server.port}")
+                .containsEntry("resilience4j.circuitbreaker.instances.clientes.base-config", "http-interno")
                 .containsEntry("spring.kafka.bootstrap-servers", "localhost:9092")
-                .containsEntry("banco.jwt.jwk-set-uri", "https://localhost:8081/oauth2/jwks")
-                .containsEntry("banco.jwt.token-uri", "https://localhost:8081/oauth2/token");
+                .containsEntry("banco.jwt.jwk-set-uri", "https://localhost:8081/oauth2/jwks");
+        assertThat(propiedades(entorno).get("management.endpoints.web.exposure.include")).contains("circuitbreakers", "prometheus");
     }
 
     @Test
-    @DisplayName("Resilience4j por entorno: la misma politica compartida, con los valores de la nube cuando el perfil es nube")
+    @DisplayName("Perfil nube: direcciones de la red de Docker y Resilience4j mas tolerante, sobre la misma politica")
     void politicasPorEntorno() {
-        Map<String, String> local = propiedades(entorno("transferencias-service", "default"));
-        Map<String, String> nube = propiedades(entorno("transferencias-service", "nube"));
+        Map<String, String> local = propiedades(entorno("pagos-service", "default"));
+        Map<String, String> nube = propiedades(entorno("pagos-service", "nube"));
         String circuito = "resilience4j.circuitbreaker.configs.http-interno.";
-        assertThat(local).containsEntry("resilience4j.circuitbreaker.instances.core.base-config", "http-interno")
-                .containsEntry("resilience4j.circuitbreaker.instances.kafka.base-config", "publicacion-kafka")
-                .containsEntry(circuito + "minimum-number-of-calls", "3")
+        assertThat(local).containsEntry(circuito + "minimum-number-of-calls", "3")
                 .containsEntry(circuito + "wait-duration-in-open-state", "10s")
                 .doesNotContainKey(circuito + "slow-call-duration-threshold");
-        assertThat(nube).containsEntry("resilience4j.circuitbreaker.instances.core.base-config", "http-interno")
+        assertThat(nube).containsEntry("resilience4j.circuitbreaker.instances.cuentas.base-config", "http-interno")
                 .containsEntry(circuito + "minimum-number-of-calls", "5")
                 .containsEntry(circuito + "wait-duration-in-open-state", "15s")
                 .containsEntry(circuito + "slow-call-duration-threshold", "2s")
                 .containsEntry("resilience4j.retry.configs.http-interno.enable-exponential-backoff", "true")
                 .containsEntry("spring.datasource.url", "jdbc:postgresql://db:5432/banco_xyz")
+                .containsEntry("banco.jwt.emisor", "https://banco-auth:8081")
+                .containsEntry("eureka.instance.hostname", "${spring.application.name}")
                 .containsEntry("eureka.client.service-url.defaultZone", "http://eureka-1:8761/eureka/,http://eureka-2:8762/eureka/");
     }
 
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"banco-auth", "clientes-service", "cuentas-service", "pagos-service", "bff-web", "bff-movil", "bff-cajero"})
+    @DisplayName("Cada circuito de cada servicio usa una politica compartida (base-config), no una propia")
+    void circuitosConPoliticaCompartida(String servicio) {
+        Map<String, String> configuracion = propiedades(entorno(servicio, "nube"));
+        configuracion.forEach((clave, valor) -> {
+            if (clave.matches("resilience4j\\.(circuitbreaker|retry|bulkhead)\\.instances\\.[a-z]+\\.base-config")) {
+                assertThat(valor).isIn("http-interno", "publicacion-kafka");
+            }
+        });
+        assertThat(configuracion.keySet()).noneMatch(clave -> clave.matches(
+                "resilience4j\\.circuitbreaker\\.instances\\.[a-z]+\\.(sliding-window-size|failure-rate-threshold)"));
+    }
+
     @Test
-    @DisplayName("banco-auth y transferencias-service comparten la politica http-interno; cada uno ignora su propia excepcion de negocio")
-    void politicaCompartida() {
-        Map<String, String> auth = propiedades(entorno("banco-auth", "nube"));
-        Map<String, String> transferencias = propiedades(entorno("transferencias-service", "nube"));
-        auth.keySet().stream().filter(clave -> clave.contains(".configs.http-interno."))
-                .forEach(clave -> assertThat(transferencias).containsEntry(clave, auth.get(clave)));
-        assertThat(auth.get("resilience4j.circuitbreaker.instances.core.ignore-exceptions")).contains("com.bancoxyz.auth.core");
-        assertThat(transferencias.get("resilience4j.circuitbreaker.instances.core.ignore-exceptions")).contains("com.bancoxyz.transferencias.core");
+    @DisplayName("Cada servicio tiene su puerto de negocio y su puerto de operacion, sin choques entre ellos")
+    void puertosUnicos() {
+        Set<String> puertos = new HashSet<>();
+        for (String servicio : SERVICIOS) {
+            Map<String, String> configuracion = propiedades(entorno(servicio, "default"));
+            assertThat(puertos.add(configuracion.get("server.port"))).as(servicio + " server.port").isTrue();
+            assertThat(puertos.add(configuracion.get("management.server.port"))).as(servicio + " management").isTrue();
+        }
+        assertThat(puertos).hasSize(SERVICIOS.size() * 2);
     }
 
     @Test
@@ -97,24 +119,19 @@ class ConfiguracionCentralTest {
     }
 
     @Test
-    @DisplayName("antifraude-service recibe sus reglas de riesgo desde la configuracion central")
-    void reglasDeAntifraude() {
-        assertThat(propiedades(entorno("antifraude-service")))
-                .containsEntry("banco.antifraude.monto-maximo", "5000")
-                .containsEntry("banco.antifraude.cuentas-en-observacion", "104")
-                .containsEntry("banco.antifraude.demora-ms", "200");
+    @DisplayName("pagos-service recibe sus reglas de fraude desde la configuracion central")
+    void reglasDeFraude() {
+        assertThat(propiedades(entorno("pagos-service", "default")))
+                .containsEntry("banco.pagos.fraude.monto-maximo", "5000000")
+                .containsEntry("banco.pagos.fraude.cuentas-en-observacion", "104");
     }
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(strings = {"banco-core-api", "banco-auth", "transferencias-service", "antifraude-service", "notificaciones-service"})
+    @ValueSource(strings = {"banco-auth", "clientes-service", "cuentas-service", "pagos-service", "bff-web", "bff-movil", "bff-cajero"})
     @DisplayName("Ningun servicio recibe claves ni secretos desde la configuracion central")
     void sinSecretos(String servicio) {
-        assertThat(propiedades(entorno(servicio)).keySet())
+        assertThat(propiedades(entorno(servicio, "nube")).keySet())
                 .noneMatch(clave -> clave.matches("(?i).*(password|clave|secret|secreto|pepper).*"));
-    }
-
-    private JsonNode entorno(String servicio) {
-        return entorno(servicio, "default");
     }
 
     private JsonNode entorno(String servicio, String perfil) {
@@ -124,8 +141,10 @@ class ConfiguracionCentralTest {
         return respuesta.getBody();
     }
 
-    private static List<String> fuentes(JsonNode entorno) {
-        return entorno.get("propertySources").findValuesAsText("name");
+    /** Nombre de archivo de cada fuente, en orden de prioridad (la primera gana). */
+    private static List<String> archivos(JsonNode entorno) {
+        return entorno.get("propertySources").findValuesAsText("name").stream()
+                .map(nombre -> nombre.substring(nombre.lastIndexOf('/') + 1)).toList();
     }
 
     /** Propiedades efectivas: la fuente especifica gana sobre la comun, como en el cliente. */

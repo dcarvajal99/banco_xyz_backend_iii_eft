@@ -1,13 +1,15 @@
-# Banco XYZ en la nube: todo el ecosistema en contenedores con un solo comando.
+# Banco XYZ - EFT: el ecosistema completo en contenedores con un solo comando.
 #
-#   docker compose up -d --build        construye las imagenes desde el codigo y levanta todo en orden
-#   docker compose ps                   estado y salud de cada contenedor
-#   docker compose up -d --scale antifraude-service=3   tres instancias de antifraude en el mismo grupo de Kafka
-#   docker compose down                 detiene todo (los volumenes de datos, Kafka y certificados se conservan)
+#   docker compose up -d --build --wait            construye las 10 aplicaciones desde el codigo y levanta todo en orden
+#   docker compose ps                              estado y salud de cada contenedor
+#   docker compose up -d --scale cuentas-service=2 --scale pagos-service=2 --scale clientes-service=2   escalar
+#   docker compose down                            detiene todo (down -v borra base, Kafka y certificados)
 #
-# Orden de arranque (depends_on por salud): pki -> db y kafka -> config-server -> eureka-1 y eureka-2 -> banco-core-api
-# -> banco-auth, transferencias-service, antifraude-service y notificaciones-service.
-# Secretos: por variable de entorno o archivo .env (ver .env.ejemplo). Los valores por defecto son solo de desarrollo.
+# Orden (depends_on por salud): pki -> db, kafka -> config-server -> eureka-1/2 -> banco-xyz-batch (carga y termina)
+# -> banco-auth, clientes-service, cuentas-service, pagos-service -> bff-web, bff-movil, bff-cajero.
+# Hacia el equipo solo se publican, en 127.0.0.1, la entrada de cada canal (BFF), el login (banco-auth) y las consolas
+# de infraestructura. Los microservicios no publican puertos: viven en la red interna (y por eso se pueden escalar).
+# Secretos: archivo .env (ver .env.ejemplo). Los valores por defecto son solo de desarrollo.
 
 name: banco-xyz
 
@@ -18,24 +20,30 @@ x-java: &java
     - certificados:/certificados:ro
 
 x-entorno: &entorno
-  # Perfil tls (HTTPS) y nube (configuracion de este entorno en el Config Server).
+  # HTTPS (perfil tls) y la configuracion del entorno en contenedores (perfil nube del Config Server).
   SPRING_PROFILES_ACTIVE: tls,nube
   BANCO_CERTIFICADOS: /certificados
   BANCO_CONFIG_SERVER: https://config-server:8888
   BANCO_CONFIG_USUARIO: ${BANCO_CONFIG_USUARIO:-configuracion}
   BANCO_CONFIG_CLAVE: ${BANCO_CONFIG_CLAVE:-config-secreto-dev}
   BANCO_ALMACEN_CLAVE: ${BANCO_ALMACEN_CLAVE:-almacen-dev}
-  # Si el Config Server rechaza a un servicio, el servicio no arranca (no corre con los valores de su jar).
+  # Si el Config Server rechaza al servicio, el servicio no arranca (no corre con valores incompletos).
   BANCO_CONFIG_FAIL_FAST: "true"
+  BANCO_DB_USUARIO: ${BANCO_DB_USUARIO:-banco}
+  BANCO_DB_CLAVE: ${BANCO_DB_CLAVE:-banco123}
 
 x-listo: &listo
   condition: service_healthy
+
+x-infraestructura: &infraestructura
+  config-server: *listo
+  eureka-1: *listo
 
 services:
 
   # ---------------------------------------------------------------------------------------------------- infraestructura
   pki:
-    build: { context: banco-xyz-cloud, dockerfile: docker/pki/Dockerfile }
+    build: { context: infra, dockerfile: docker/pki/Dockerfile }
     image: banco-xyz/pki:1.0.0
     environment:
       BANCO_ALMACEN_CLAVE: ${BANCO_ALMACEN_CLAVE:-almacen-dev}
@@ -45,8 +53,7 @@ services:
     networks: [banco]
 
   db:
-    build: { context: banco-xyz-cloud, dockerfile: docker/db/Dockerfile }
-    image: banco-xyz/db:1.0.0
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: banco_xyz
       POSTGRES_USER: ${BANCO_DB_USUARIO:-banco}
@@ -58,8 +65,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    # Solo en el equipo, para inspeccionar los esquemas (clientes, cuentas, pagos, migracion).
+    ports:
+      - "127.0.0.1:5439:5432"
     restart: unless-stopped
-    mem_limit: 256m
+    mem_limit: 384m
     networks: [banco]
 
   kafka:
@@ -82,13 +92,10 @@ services:
       # Los topicos los crea cada servicio con sus particiones: un nombre mal escrito falla en vez de crear otro.
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_HEAP_OPTS: -Xmx384m -Xms384m
-      # Datos en el volumen (la imagen los deja por defecto en /tmp: se perderian al recrear el contenedor).
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka:/var/lib/kafka/data
     healthcheck:
-      # La herramienta corre dentro del contenedor del broker: con un heap pequeno, no los 384 MB que heredaria de
-      # KAFKA_HEAP_OPTS (comparte el limite de memoria del contenedor con el broker).
       test: ["CMD-SHELL", "KAFKA_HEAP_OPTS='-Xms16m -Xmx64m' /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 > /dev/null 2>&1"]
       interval: 5s
       timeout: 10s
@@ -99,7 +106,7 @@ services:
 
   config-server:
     <<: *java
-    build: { context: banco-xyz-cloud, dockerfile: config-server/Dockerfile }
+    build: config-server
     image: banco-xyz/config-server:1.0.0
     hostname: config-server
     environment:
@@ -113,7 +120,7 @@ services:
 
   eureka-1:
     <<: *java
-    build: { context: banco-xyz-cloud, dockerfile: eureka-server/Dockerfile }
+    build: eureka-server
     image: banco-xyz/eureka-server:1.0.0
     hostname: eureka-1
     environment:
@@ -146,27 +153,28 @@ services:
       - "127.0.0.1:8762:8762"
     mem_limit: 320m
 
-  # ----------------------------------------------------------------------------------------------------- microservicios
-  banco-core-api:
-    <<: *java
-    build: banco-core-api
-    image: banco-xyz/banco-core-api:1.0.0
-    hostname: banco-core-api
+  # ----------------------------------------------------------------------------------------------------- capa de datos
+  # Contenedor de UNA ejecucion: migra fin_legacy_data (semana_3) y termina. Con 40,7 % de filas sucias el decisor
+  # derivaria la corrida a revision manual (codigo 3); el umbral de contingencia 0,80 lo autoriza el area de datos.
+  # Volver a levantarlo no migra dos veces (la corrida "carga-inicial" ya termino COMPLETED).
+  banco-xyz-batch:
+    build: banco-xyz-batch
+    image: banco-xyz/banco-xyz-batch:1.0.0
+    command: ["--job=completa", "--dataset=semana_3", "--salida=salida", "--corrida=carga-inicial",
+              "--banco.batch.umbral-rechazo-omision=0.80"]
     environment:
-      <<: *entorno
-      EUREKA_INSTANCE_HOSTNAME: banco-core-api
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/banco_xyz
       BANCO_DB_USUARIO: ${BANCO_DB_USUARIO:-banco}
       BANCO_DB_CLAVE: ${BANCO_DB_CLAVE:-banco123}
-      BANCO_CANAL_AUTENTICACION_CLAVE: ${BANCO_CANAL_AUTENTICACION_CLAVE:-autenticacion-secreto-dev}
+    volumes:
+      - salida-batch:/app/salida
     depends_on:
       db: *listo
-      kafka: *listo
-      config-server: *listo
-      eureka-1: *listo
-    ports:
-      - "127.0.0.1:9080:9080"
-    mem_limit: 640m
+    restart: "no"
+    mem_limit: 768m
+    networks: [banco]
 
+  # ----------------------------------------------------------------------------------------------- servidor de identidad
   banco-auth:
     <<: *java
     build: banco-auth
@@ -174,78 +182,110 @@ services:
     hostname: banco-auth
     environment:
       <<: *entorno
-      EUREKA_INSTANCE_HOSTNAME: banco-auth
       BANCO_CANAL_AUTENTICACION_CLAVE: ${BANCO_CANAL_AUTENTICACION_CLAVE:-autenticacion-secreto-dev}
-      BANCO_OAUTH_BANCA_WEB_SECRETO: ${BANCO_OAUTH_BANCA_WEB_SECRETO:-banca-web-secreto-dev}
-      BANCO_OAUTH_TRANSFERENCIAS_SECRETO: ${BANCO_OAUTH_TRANSFERENCIAS_SECRETO:-transferencias-oauth-dev}
+      BANCO_OAUTH_BFF_WEB_SECRETO: ${BANCO_OAUTH_BFF_WEB_SECRETO:-bff-web-secreto-dev}
+      BANCO_OAUTH_BFF_CAJERO_SECRETO: ${BANCO_OAUTH_BFF_CAJERO_SECRETO:-bff-cajero-oauth-dev}
+      BANCO_OAUTH_PAGOS_SECRETO: ${BANCO_OAUTH_PAGOS_SECRETO:-pagos-oauth-dev}
+      BANCO_OAUTH_CUENTAS_SECRETO: ${BANCO_OAUTH_CUENTAS_SECRETO:-cuentas-oauth-dev}
       BANCO_OAUTH_OPERACION_SECRETO: ${BANCO_OAUTH_OPERACION_SECRETO:-operacion-secreto-dev}
-      # Inicio de sesion con GitHub: client-id (el Config Server lo usa en el registro) y secreto, que va directo a la
-      # propiedad del cliente OAuth sin pasar por el Config Server. Sin .env, GitHub queda sin configurar (solo formulario).
+      # Ingresar con GitHub: client-id (pasa por el Config Server) y secreto (directo, nunca por el Config Server).
       BANCO_GITHUB_CLIENT_ID: ${BANCO_GITHUB_CLIENT_ID:-sin-configurar}
       SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET: ${BANCO_GITHUB_CLIENT_SECRET:-sin-configurar}
-      # Vinculos adicionales cuenta de GitHub -> cliente del banco (id=usuario,id=usuario), para probar con otra cuenta.
       BANCO_GITHUB_VINCULOS: ${BANCO_GITHUB_VINCULOS:-}
-    depends_on:
-      config-server: *listo
-      eureka-1: *listo
-      banco-core-api: *listo
+    depends_on: *infraestructura
     ports:
       - "127.0.0.1:8081:8081"
-      - "127.0.0.1:9081:9081"
     mem_limit: 448m
 
-  transferencias-service:
+  # ------------------------------------------------------------------------------------- microservicios (red interna)
+  clientes-service:
     <<: *java
-    build: transferencias-service
-    image: banco-xyz/transferencias-service:1.0.0
-    hostname: transferencias-service
+    build: clientes-service
+    image: banco-xyz/clientes-service:1.0.0
     environment:
       <<: *entorno
-      EUREKA_INSTANCE_HOSTNAME: transferencias-service
-      BANCO_DB_USUARIO: ${BANCO_DB_USUARIO:-banco}
-      BANCO_DB_CLAVE: ${BANCO_DB_CLAVE:-banco123}
-      BANCO_OAUTH_TRANSFERENCIAS_SECRETO: ${BANCO_OAUTH_TRANSFERENCIAS_SECRETO:-transferencias-oauth-dev}
+      BANCO_CANAL_AUTENTICACION_CLAVE: ${BANCO_CANAL_AUTENTICACION_CLAVE:-autenticacion-secreto-dev}
     depends_on:
+      <<: *infraestructura
       db: *listo
       kafka: *listo
-      config-server: *listo
-      banco-core-api: *listo
+      banco-xyz-batch: { condition: service_completed_successfully }
+    mem_limit: 448m
+
+  cuentas-service:
+    <<: *java
+    build: cuentas-service
+    image: banco-xyz/cuentas-service:1.0.0
+    environment:
+      <<: *entorno
+      BANCO_OAUTH_CUENTAS_SECRETO: ${BANCO_OAUTH_CUENTAS_SECRETO:-cuentas-oauth-dev}
+      BANCO_PEPPER_TARJETAS: ${BANCO_PEPPER_TARJETAS:-pepper-tarjetas-desarrollo-cambiar-en-produccion-01}
+    depends_on:
+      <<: *infraestructura
+      db: *listo
+      kafka: *listo
+      banco-xyz-batch: { condition: service_completed_successfully }
+    mem_limit: 448m
+
+  pagos-service:
+    <<: *java
+    build: pagos-service
+    image: banco-xyz/pagos-service:1.0.0
+    environment:
+      <<: *entorno
+      BANCO_OAUTH_PAGOS_SECRETO: ${BANCO_OAUTH_PAGOS_SECRETO:-pagos-oauth-dev}
+    depends_on:
+      <<: *infraestructura
+      db: *listo
+      kafka: *listo
+    mem_limit: 448m
+
+  # ------------------------------------------------------------------------------------------- BFF: un canal cada uno
+  bff-web:
+    <<: *java
+    build: bff-web
+    image: banco-xyz/bff-web:1.0.0
+    environment:
+      <<: *entorno
+      BANCO_OAUTH_BFF_WEB_SECRETO: ${BANCO_OAUTH_BFF_WEB_SECRETO:-bff-web-secreto-dev}
+      # El cliente OAuth de Spring Security llama a banco-auth con el TLS por defecto de la JVM: se le da la CA del banco.
+      JAVA_TOOL_OPTIONS: >-
+        -XX:MaxRAMPercentage=60 -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError
+        -Djavax.net.ssl.trustStore=/certificados/ca/truststore.p12 -Djavax.net.ssl.trustStoreType=PKCS12
+        -Djavax.net.ssl.trustStorePassword=${BANCO_ALMACEN_CLAVE:-almacen-dev}
+    depends_on:
+      <<: *infraestructura
       banco-auth: *listo
     ports:
-      - "127.0.0.1:8082:8082"
-      - "127.0.0.1:9082:9082"
-    mem_limit: 512m
+      - "127.0.0.1:8090:8090"
+    mem_limit: 448m
 
-  antifraude-service:
+  bff-movil:
     <<: *java
-    build: antifraude-service
-    image: banco-xyz/antifraude-service:1.0.0
-    # Sin hostname ni puertos publicados: se escala con --scale y cada instancia se registra con su IP.
+    build: bff-movil
+    image: banco-xyz/bff-movil:1.0.0
     environment:
       <<: *entorno
-      EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
     depends_on:
-      kafka: *listo
-      config-server: *listo
-      eureka-1: *listo
-    mem_limit: 384m
-
-  notificaciones-service:
-    <<: *java
-    build: notificaciones-service
-    image: banco-xyz/notificaciones-service:1.0.0
-    hostname: notificaciones-service
-    environment:
-      <<: *entorno
-      EUREKA_INSTANCE_HOSTNAME: notificaciones-service
-    depends_on:
-      kafka: *listo
-      config-server: *listo
-      eureka-1: *listo
+      <<: *infraestructura
+      banco-auth: *listo
     ports:
-      - "127.0.0.1:8084:8084"
-      - "127.0.0.1:9084:9084"
-    mem_limit: 384m
+      - "127.0.0.1:8091:8091"
+    mem_limit: 448m
+
+  bff-cajero:
+    <<: *java
+    build: bff-cajero
+    image: banco-xyz/bff-cajero:1.0.0
+    environment:
+      <<: *entorno
+      BANCO_OAUTH_BFF_CAJERO_SECRETO: ${BANCO_OAUTH_BFF_CAJERO_SECRETO:-bff-cajero-oauth-dev}
+    depends_on:
+      <<: *infraestructura
+      banco-auth: *listo
+    ports:
+      - "127.0.0.1:8083:8083"
+    mem_limit: 448m
 
 networks:
   banco:
@@ -255,3 +295,4 @@ volumes:
   certificados:
   datos:
   kafka:
+  salida-batch:

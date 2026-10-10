@@ -15,11 +15,14 @@ target/
 *.log
 *.pid
 
-# Evidencias de ejecucion: acompanan la entrega en el ZIP y se regeneran con banco-xyz-cloud/scripts/.
-banco-xyz-cloud/evidencias/
+# Evidencias de ejecucion: acompanan la entrega en el ZIP y se regeneran con infra/scripts/.
+infra/evidencias/
 
 # Copia local de la PKI de desarrollo (claves privadas) que los scripts toman del contenedor pki: NO se versiona.
-banco-xyz-cloud/certificados/
+infra/certificados/
+
+# Salida local del batch (reportes, bitacora, conciliacion)
+banco-xyz-batch/salida/
 
 # Secretos locales del docker-compose.yaml (la plantilla es .env.ejemplo)
 .env

@@ -29,5 +29,5 @@ ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=60 -XX:+UseSerialGC -XX:+ExitOnOutOf
     BANCO_CERTIFICADOS=/certificados \
     SERVER_ADDRESS=0.0.0.0
 HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=6 \
-  CMD wget -qO- http://127.0.0.1:9888/actuator/health | grep -q '"status":"UP"' || exit 1
+  CMD wget -qO- http://127.0.0.1:9888/actuator/health | grep -q '^{"status":"UP"' || exit 1
 ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

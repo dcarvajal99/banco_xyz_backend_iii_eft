@@ -1,4 +1,4 @@
-# Imagen de un solo uso que genera la PKI de desarrollo en el volumen "certificados" del compose. Contexto: banco-xyz-cloud/.
+# Imagen de un solo uso que genera la PKI de desarrollo en el volumen "certificados" del compose. Contexto: infra/.
 # Usa el mismo script que el modo local (scripts/generar_certificados.sh): openssl para los certificados y keytool para
 # el almacen de confianza de los clientes Java.
 FROM eclipse-temurin:21-jre-alpine

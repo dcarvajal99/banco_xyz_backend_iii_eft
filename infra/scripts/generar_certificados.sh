@@ -5,7 +5,8 @@
 #   servicios/<servicio>.*    un certificado por servicio, valido como servidor Y como cliente (mTLS), en PEM y en
 #                             PKCS12 (<servicio>.p12, para el cliente del Config Server). Nombres alternativos: el
 #                             nombre del servicio en docker-compose (red interna) y localhost (pruebas desde el equipo)
-#   intruso/                  una CA ajena y un certificado "transferencias-service" firmado por ella (pruebas negativas)
+#   terminales/ATM-00N.*      certificado de cliente de cada cajero automatico (mTLS hacia bff-cajero)
+#   intruso/                  una CA ajena y un certificado "pagos-service" firmado por ella (pruebas negativas)
 # Clave de los almacenes PKCS12: BANCO_ALMACEN_CLAVE (por defecto almacen-dev).
 #
 # Las claves privadas NO se versionan: la carpeta certificados/ esta en .gitignore y se regenera con este script.
@@ -44,30 +45,35 @@ emitir() { # emitir CA DESTINO CN USOS [SAN]
 }
 
 crear_ca "$DIR/ca/ca" "Banco XYZ CA de desarrollo"
-for servicio in config-server banco-core-api banco-auth transferencias-service antifraude-service notificaciones-service; do
+for servicio in config-server banco-auth clientes-service cuentas-service pagos-service bff-web bff-movil bff-cajero; do
   emitir "$DIR/ca/ca" "$DIR/servicios/$servicio" "$servicio" "serverAuth,clientAuth" "DNS:$servicio,DNS:localhost,IP:127.0.0.1"
   openssl pkcs12 -export -in "$DIR/servicios/$servicio.crt" -inkey "$DIR/servicios/$servicio.key" -name "$servicio" \
     -passout "pass:$ALMACEN" -out "$DIR/servicios/$servicio.p12"
   chmod 600 "$DIR/servicios/$servicio.p12"
 done
+# Terminales de cajero: certificado de cliente (mTLS hacia bff-cajero), CN = id del terminal.
+mkdir -p "$DIR/terminales"
+for terminal in ATM-001 ATM-002; do
+  emitir "$DIR/ca/ca" "$DIR/terminales/$terminal" "$terminal" "clientAuth"
+done
 rm -f "$DIR/ca/truststore.p12"
 keytool -importcert -noprompt -storetype PKCS12 -keystore "$DIR/ca/truststore.p12" -storepass "$ALMACEN" \
   -alias banco-xyz-ca -file "$DIR/ca/ca.crt" > /dev/null
 crear_ca "$DIR/intruso/ca-intrusa" "CA desconocida"
-emitir "$DIR/intruso/ca-intrusa" "$DIR/intruso/transferencias-service-falso" "transferencias-service" "serverAuth,clientAuth" \
+emitir "$DIR/intruso/ca-intrusa" "$DIR/intruso/pagos-service-falso" "pagos-service" "serverAuth,clientAuth" \
   "DNS:localhost,IP:127.0.0.1"
 rm -f "$DIR"/ca/*.srl "$DIR"/intruso/*.srl
 
 printf '\nPKI de desarrollo generada en %s\n\n' "$DIR"
 printf '%-34s %-32s %-28s %s\n' "Certificado" "Sujeto (CN)" "Emisor" "Vence"
-for crt in "$DIR"/ca/ca.crt "$DIR"/servicios/*.crt "$DIR"/intruso/*.crt; do
+for crt in "$DIR"/ca/ca.crt "$DIR"/servicios/*.crt "$DIR"/terminales/*.crt "$DIR"/intruso/*.crt; do
   sujeto=$(openssl x509 -in "$crt" -noout -subject -nameopt multiline | awk -F' = ' '/commonName/{print $2}')
   emisor=$(openssl x509 -in "$crt" -noout -issuer -nameopt multiline | awk -F' = ' '/commonName/{print $2}')
   vence=$(openssl x509 -in "$crt" -noout -enddate | cut -d= -f2)
   printf '%-34s %-32s %-28s %s\n' "${crt#$DIR/}" "$sujeto" "$emisor" "$vence"
 done
 printf '\nVerificacion de la cadena contra la CA del banco:\n'
-for crt in "$DIR"/servicios/*.crt "$DIR"/intruso/transferencias-service-falso.crt; do
+for crt in "$DIR"/servicios/*.crt "$DIR"/terminales/*.crt "$DIR"/intruso/pagos-service-falso.crt; do
   printf '  %-34s %s\n' "${crt#$DIR/}" "$(openssl verify -CAfile "$DIR/ca/ca.crt" "$crt" 2>&1 | tail -1 | sed "s#$DIR/##")"
 done
 printf '\nAlmacenes PKCS12 para clientes Java (clave BANCO_ALMACEN_CLAVE):\n'
