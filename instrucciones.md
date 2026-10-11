@@ -126,7 +126,28 @@ token_movil diana.prince && curl -s --cacert infra/certificados/ca/ca.crt "${BEA
 cajero POST /cajero/v1/sesiones '{"numeroTarjeta":"4000000000001216","pin":"1234"}'
 ```
 
-### 6.4 Escalar a mano
+### 6.4 Los tres BFF en Postman
+
+`infra/postman/banco-xyz-tres-bff.postman_collection.json` compara los tres canales con el mismo cliente: qué responde
+cada BFF (completo, liviano o de pantalla) y con qué credencial (cookie de sesión, token de app o certificado + firma).
+
+1. Importar la colección en Postman (File > Import).
+2. **Settings > Certificates > CA certificates**: activar y elegir `infra/certificados/ca/ca.crt`.
+3. **Settings > Certificates > Add certificate**: host `localhost`, puerto `8083`, CRT
+   `infra/certificados/terminales/ATM-001.crt` y KEY `infra/certificados/terminales/ATM-001.key` (el terminal del cajero).
+4. Clic derecho en **0 · Preparar credenciales** > Run: hace el login web completo, el PKCE de la app (token de 5 minutos)
+   y abre la sesión del cajero, con un paso por solicitud.
+5. **1 · Comparar los tres canales**: enviar cada solicitud y mirar **Body > Visualize**. Las carpetas 2 y 3 muestran los
+   rechazos de cada canal y las operaciones (depósito, transferencias con contratos distintos y retiro idempotente).
+
+Por línea de comandos, con Newman:
+
+```bash
+npx newman run infra/postman/banco-xyz-tres-bff.postman_collection.json --ssl-extra-ca-certs infra/certificados/ca/ca.crt \
+  --ssl-client-cert-list <(echo '[{"name":"ATM-001","matches":["https://localhost:8083/*"],"cert":{"src":"infra/certificados/terminales/ATM-001.crt"},"key":{"src":"infra/certificados/terminales/ATM-001.key"}}]')
+```
+
+### 6.5 Escalar a mano
 
 ```bash
 docker compose up -d --no-deps --scale cuentas-service=2 --scale pagos-service=2 --scale clientes-service=2 \

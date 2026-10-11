@@ -9,6 +9,7 @@ aplicaciones, y los scripts que prueban el ecosistema levantado.
 | `scripts/generar_certificados.sh` | Lo que corre esa imagen: un certificado por servicio (CN y SAN = nombre del servicio, `localhost`, `127.0.0.1`), uno por terminal de cajero (`ATM-001`, `ATM-002`) y un certificado intruso firmado por otra CA (para las pruebas negativas) |
 | `scripts/*.sh` | Evidencias: cada una prueba un criterio de la pauta y termina con `Resultado: N verificaciones correctas, 0 fallas` |
 | `evidencias/` | Salidas de las evidencias (no se versiona; acompaña la entrega) |
+| `postman/` | Colección de Postman de los tres BFF: login de cada canal, comparación, rechazos y operaciones (ver `instrucciones.md` 6.4) |
 | `certificados/` | Copia local de la PKI que hacen los scripts (no se versiona: tiene claves privadas) |
 
 ## Scripts

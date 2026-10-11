@@ -1,0 +1,1461 @@
+{
+  "info": {
+    "name": "Banco XYZ · Tres BFF (web, movil y cajero)",
+    "description": "Los tres **Backend for Frontend** del Banco XYZ con la misma cuenta y el mismo cliente, para ver **en que cambian**:\nla respuesta (completa, liviana o de pantalla) y la credencial (cookie de sesion, token de app o certificado + firma).\n\n## Una sola vez, antes de usarla\n1. Ecosistema arriba: `docker compose up -d --wait` en `banco-xyz-eft/`.\n2. **Settings > Certificates > CA certificates**: activar y elegir `banco-xyz-eft/infra/certificados/ca/ca.crt` (la CA de\n   desarrollo; la copian los scripts de `infra/scripts`). Alternativa: Settings > General > desactivar *SSL certificate verification*.\n3. **Settings > Certificates > Add certificate** (certificado del cajero): Host `localhost`, Port `8083`,\n   CRT `infra/certificados/terminales/ATM-001.crt`, KEY `infra/certificados/terminales/ATM-001.key`.\n\n## Cada vez\n1. Clic derecho en **0 · Preparar credenciales** > **Run folder** > Run (unos segundos): deja la sesion web, el token de\n   la app (dura 5 min) y la sesion del cajero.\n2. **1 · Comparar los tres canales**: enviar cada solicitud y abrir **Body > Visualize**.\n3. **2 · Lo que protege cada canal**: los rechazos propios de cada canal.\n4. **3 · Operaciones por canal**: el mismo pago con contratos distintos y el retiro idempotente.\n\nUsuarios de prueba: `diana.prince` / `Cliente2026!` · tarjeta de la cuenta 121: `4000000000001216` PIN `1234`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "item": [
+    {
+      "name": "0 · Preparar credenciales (Run folder)",
+      "description": "Ejecutar con Run: login web completo (OAuth2 hecho por el BFF), PKCE de la app y sesion del cajero. Los pasos muestran el flujo real, uno por solicitud.",
+      "item": [
+        {
+          "name": "Web · login con banco-auth (token handler)",
+          "item": [
+            {
+              "name": "Web 1 · El BFF inicia el login (302 a banco-auth)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{web}}/oauth2/authorization/banco-auth",
+                "description": "bff-web es el cliente OAuth confidencial: arma la solicitud authorization_code + PKCE y redirige a banco-auth."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('302 hacia banco-auth', () => pm.response.to.have.status(302));",
+                      "pm.collectionVariables.set('siguiente_web', pm.response.headers.get('Location'));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Web 2 · banco-auth pide iniciar sesion",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{siguiente_web}}",
+                "description": "Sin sesion en banco-auth, redirige al formulario. Si ya habia sesion (segunda corrida), entrega el codigo directo."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const destino = pm.response.headers.get('Location') || '';",
+                      "pm.test('redirige al login o al BFF con el codigo', () => pm.expect(destino).to.match(/\\/login|code=/));",
+                      "if (destino.includes('/login/oauth2/code/')) {",
+                      "    pm.collectionVariables.set('callback_web', destino);",
+                      "    pm.execution.setNextRequest('Web 6 · El BFF canjea el codigo y crea la sesion');",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Web 3 · Formulario de banco-auth (token CSRF)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{auth}}/login",
+                "description": "La clave se escribe aqui, en banco-auth; nunca en la pagina del banco."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const csrf = (pm.response.text().match(/name=\"_csrf\" value=\"([^\"]+)\"/) || [])[1];",
+                      "pm.test('formulario con token CSRF', () => pm.expect(csrf).to.be.a('string'));",
+                      "pm.collectionVariables.set('csrf_login_web', csrf);"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Web 4 · Usuario y clave en banco-auth",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": "{{auth}}/login",
+                "description": "banco-auth verifica la clave en clientes-service (Basic + mTLS) y vuelve a la autorizacion pendiente.",
+                "body": {
+                  "mode": "urlencoded",
+                  "urlencoded": [
+                    {
+                      "key": "username",
+                      "value": "{{usuario}}"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{clave}}"
+                    },
+                    {
+                      "key": "_csrf",
+                      "value": "{{csrf_login_web}}"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const destino = pm.response.headers.get('Location') || '';",
+                      "pm.test('login aceptado', () => pm.expect(destino).to.not.include('error'));",
+                      "pm.collectionVariables.set('siguiente_web', destino);"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Web 5 · banco-auth emite el codigo para el BFF",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{siguiente_web}}",
+                "description": "Redirige al callback de bff-web con un codigo de un solo uso."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const destino = pm.response.headers.get('Location') || '';",
+                      "pm.test('callback del BFF con codigo', () => pm.expect(destino).to.include('/login/oauth2/code/banco-auth?code='));",
+                      "pm.collectionVariables.set('callback_web', destino);"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Web 6 · El BFF canjea el codigo y crea la sesion",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{callback_web}}",
+                "description": "bff-web canjea el codigo con su secreto y guarda access, refresh e id token EN SU SESION. Al cliente solo le entrega la cookie BFF_WEB_SESION (HttpOnly, Secure)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('sesion creada', () => pm.response.to.have.status(302));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Web 7 · Sesion y token CSRF de la pagina",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{web}}/web/api/sesion",
+                "description": "El navegador (aqui Postman) queda con la cookie de sesion y la cookie XSRF-TOKEN para escribir."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('autenticado', () => pm.expect(pm.response.json().autenticado).to.eql(true));",
+                      "pm.collectionVariables.set('xsrf', pm.cookies.get('XSRF-TOKEN'));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Movil · PKCE de la app",
+          "item": [
+            {
+              "name": "Movil 1 · La app pide autorizacion con PKCE",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{auth_movil}}/oauth2/authorize?response_type=code&client_id=banca-movil&redirect_uri={{redireccion_movil}}&scope=openid%20cuentas.leer%20clientes.leer%20pagos.escribir%20pagos.leer&state=app-demo&code_challenge={{code_challenge}}&code_challenge_method=S256",
+                "description": "La app es un cliente PUBLICO (sin secreto): genera un code_verifier y envia solo su hash (code_challenge). Se usa 127.0.0.1 en vez de localhost para que su sesion en banco-auth no se mezcle con la del BFF web."
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const cripto = require('crypto-js');",
+                      "function base64url(palabras) {",
+                      "    return cripto.enc.Base64.stringify(palabras).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');",
+                      "}",
+                      "const verificador = base64url(cripto.lib.WordArray.random(32));",
+                      "pm.collectionVariables.set('code_verifier', verificador);",
+                      "pm.collectionVariables.set('code_challenge', base64url(cripto.SHA256(verificador)));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const destino = pm.response.headers.get('Location') || '';",
+                      "pm.test('redirige al login o devuelve el codigo', () => pm.expect(destino).to.match(/\\/login|code=/));",
+                      "const codigo = (destino.match(/[?&]code=([^&]+)/) || [])[1];",
+                      "if (codigo) {",
+                      "    pm.collectionVariables.set('codigo_movil', decodeURIComponent(codigo));",
+                      "    pm.execution.setNextRequest('Movil 5 · Canje del codigo con el code_verifier (sin secreto)');",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Movil 2 · Formulario de banco-auth",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{auth_movil}}/login",
+                "description": "Login de banco-auth para la app."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const csrf = (pm.response.text().match(/name=\"_csrf\" value=\"([^\"]+)\"/) || [])[1];",
+                      "pm.test('formulario con token CSRF', () => pm.expect(csrf).to.be.a('string'));",
+                      "pm.collectionVariables.set('csrf_login_movil', csrf);"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Movil 3 · Usuario y clave en banco-auth",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": "{{auth_movil}}/login",
+                "description": "El usuario escribe su clave en banco-auth.",
+                "body": {
+                  "mode": "urlencoded",
+                  "urlencoded": [
+                    {
+                      "key": "username",
+                      "value": "{{usuario}}"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{clave}}"
+                    },
+                    {
+                      "key": "_csrf",
+                      "value": "{{csrf_login_movil}}"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const destino = pm.response.headers.get('Location') || '';",
+                      "pm.test('login aceptado', () => pm.expect(destino).to.not.include('error'));",
+                      "pm.collectionVariables.set('siguiente_movil', destino);"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Movil 4 · banco-auth vuelve a la app con el codigo",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{siguiente_movil}}",
+                "description": "Redirige a la URL loopback registrada de la app (http://127.0.0.1:8099/callback) con el codigo."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const destino = pm.response.headers.get('Location') || '';",
+                      "const codigo = (destino.match(/[?&]code=([^&]+)/) || [])[1];",
+                      "pm.test('codigo para la app', () => pm.expect(codigo).to.be.a('string'));",
+                      "pm.collectionVariables.set('codigo_movil', decodeURIComponent(codigo || ''));"
+                    ]
+                  }
+                }
+              ],
+              "protocolProfileBehavior": {
+                "followRedirects": false
+              }
+            },
+            {
+              "name": "Movil 5 · Canje del codigo con el code_verifier (sin secreto)",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": "{{auth_movil}}/oauth2/token",
+                "description": "La app demuestra que es ella con el code_verifier original. Recibe un JWT de 5 minutos con azp = banca-movil.",
+                "body": {
+                  "mode": "urlencoded",
+                  "urlencoded": [
+                    {
+                      "key": "grant_type",
+                      "value": "authorization_code"
+                    },
+                    {
+                      "key": "client_id",
+                      "value": "banca-movil"
+                    },
+                    {
+                      "key": "code",
+                      "value": "{{codigo_movil}}"
+                    },
+                    {
+                      "key": "redirect_uri",
+                      "value": "{{redireccion_movil}}"
+                    },
+                    {
+                      "key": "code_verifier",
+                      "value": "{{code_verifier}}"
+                    }
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                      "function visualizar(datos) {",
+                      "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                      "    datos.bytes = pm.response.size().body;",
+                      "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                      "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                      "}",
+                      "",
+                      "const cripto = require('crypto-js');",
+                      "const respuesta = pm.response.json();",
+                      "pm.test('token emitido', () => pm.expect(respuesta.access_token).to.be.a('string'));",
+                      "pm.collectionVariables.set('token_movil', respuesta.access_token);",
+                      "pm.collectionVariables.set('token_movil_expira', String(Date.now() + respuesta.expires_in * 1000));",
+                      "const partes = respuesta.access_token.split('.');",
+                      "const claims = JSON.parse(cripto.enc.Utf8.stringify(cripto.enc.Base64.parse(partes[1].replace(/-/g, '+').replace(/_/g, '/'))));",
+                      "visualizar({canal: 'Token de la app (banca-movil)', color: '#2E74B5',",
+                      "    idea: 'JWT firmado por banco-auth. El BFF movil revisa firma, emisor, audiencia y que azp sea banca-movil.',",
+                      "    autenticacion: 'Cliente publico + PKCE (code_verifier), sin secreto',",
+                      "    extra: [{k: 'aud', v: claims.aud}, {k: 'azp', v: claims.azp}, {k: 'rol', v: claims.rol},",
+                      "            {k: 'scope', v: [].concat(claims.scope).join(' ')}, {k: 'vence en', v: respuesta.expires_in + ' s'}],",
+                      "    muestra: JSON.stringify(claims, null, 2)});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Cajero · sesion del terminal",
+          "item": [
+            {
+              "name": "Cajero 1 · Sesion con tarjeta y PIN (terminal firmado)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{cajero}}/cajero/v1/sesiones",
+                "description": "El terminal ATM-001 se identifica con su certificado (configurado en Postman) y firma la solicitud con HMAC. El cliente se autentica con tarjeta y PIN.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"numeroTarjeta\":\"{{tarjeta}}\",\"pin\":\"{{pin}}\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const cripto = require('crypto-js');",
+                      "// Firma HMAC del terminal: canonica = METODO \\n RUTA \\n MARCA \\n NONCE \\n IDEMPOTENCY_KEY \\n sha256hex(cuerpo)",
+                      "function firmarCajero(metodo, ruta, cuerpo, clave) {",
+                      "    const marca = String(Math.floor(Date.now() / 1000));",
+                      "    const nonce = 'n-' + cripto.lib.WordArray.random(12).toString();",
+                      "    const canonica = [metodo, ruta, marca, nonce, clave || '',",
+                      "        cripto.SHA256(cuerpo || '').toString(cripto.enc.Hex)].join('\\n');",
+                      "    const firma = cripto.HmacSHA256(canonica, pm.collectionVariables.get('secreto_terminal')).toString(cripto.enc.Base64);",
+                      "    return {'X-Terminal-Id': pm.collectionVariables.get('terminal'), 'X-Marca-Tiempo': marca, 'X-Nonce': nonce, 'X-Firma': firma};",
+                      "}",
+                      "function firmarSolicitudActual() {",
+                      "    const url = pm.variables.replaceIn(pm.request.url.toString());",
+                      "    const ruta = url.replace(/^https?:\\/\\/[^/]+/, '');",
+                      "    const cuerpo = pm.request.body && pm.request.body.raw ? pm.variables.replaceIn(pm.request.body.raw) : '';",
+                      "    const encabezado = pm.request.headers.get('Idempotency-Key');",
+                      "    const clave = encabezado ? pm.variables.replaceIn(encabezado) : '';",
+                      "    const firma = firmarCajero(pm.request.method, ruta, cuerpo, clave);",
+                      "    Object.keys(firma).forEach(k => pm.request.headers.upsert({key: k, value: firma[k]}));",
+                      "}",
+                      "// Abre (o renueva) la sesion del cajero si no hay una vigente: dura 120 s.",
+                      "function conSesionCajero(despues) {",
+                      "    const expira = Number(pm.collectionVariables.get('token_cajero_expira') || 0);",
+                      "    if (pm.collectionVariables.get('token_cajero') && Date.now() < expira - 5000) { return despues(); }",
+                      "    const cuerpo = JSON.stringify({numeroTarjeta: pm.collectionVariables.get('tarjeta'), pin: pm.collectionVariables.get('pin')});",
+                      "    const firma = firmarCajero('POST', '/cajero/v1/sesiones', cuerpo, '');",
+                      "    const encabezados = [{key: 'Content-Type', value: 'application/json'}];",
+                      "    Object.keys(firma).forEach(k => encabezados.push({key: k, value: firma[k]}));",
+                      "    pm.sendRequest({url: pm.collectionVariables.get('cajero') + '/cajero/v1/sesiones', method: 'POST', header: encabezados,",
+                      "                    body: {mode: 'raw', raw: cuerpo}}, (error, respuesta) => {",
+                      "        if (!error && respuesta.code === 201) {",
+                      "            const sesion = respuesta.json();",
+                      "            pm.collectionVariables.set('token_cajero', sesion.tokenSesion);",
+                      "            pm.collectionVariables.set('token_cajero_expira', String(Date.now() + sesion.expiraEn * 1000));",
+                      "        }",
+                      "        despues();",
+                      "    });",
+                      "}",
+                      "",
+                      "firmarSolicitudActual();"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('sesion de cajero abierta', () => pm.response.to.have.status(201));",
+                      "const sesion = pm.response.json();",
+                      "pm.collectionVariables.set('token_cajero', sesion.tokenSesion);",
+                      "pm.collectionVariables.set('token_cajero_expira', String(Date.now() + sesion.expiraEn * 1000));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 · Comparar los tres canales",
+      "description": "Misma cuenta, tres respuestas. Abrir Body > Visualize.",
+      "item": [
+        {
+          "name": "WEB · Panel completo (cookie de sesion)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{web}}/web/api/panel",
+            "description": "**Que cambia:** respuesta COMPLETA para pantalla grande (17 campos por cuenta, totales, avisos y pagos) en una sola llamada que junta 4 llamadas a 3 microservicios.\n\n**Credencial:** solo la cookie de sesion; el navegador nunca ve un token.\n\n**Que mirar:** pestana Visualize."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                  "function visualizar(datos) {",
+                  "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                  "    datos.bytes = pm.response.size().body;",
+                  "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                  "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                  "}",
+                  "",
+                  "const panel = pm.response.json();",
+                  "pm.test('panel completo', () => pm.response.to.have.status(200));",
+                  "const cuenta = panel.cuentas[0] || {};",
+                  "visualizar({canal: 'BFF WEB · navegador', color: '#215E3E',",
+                  "    idea: 'Respuesta completa para pantalla grande: 4 llamadas a 3 microservicios en una respuesta.',",
+                  "    autenticacion: 'Cookie de sesion HttpOnly (BFF_WEB_SESION); el token queda en el servidor',",
+                  "    ncampos: Object.keys(cuenta).length, campos: Object.keys(cuenta),",
+                  "    extra: [{k: 'Cuentas', v: panel.cuentas.length}, {k: 'Disponible / deuda', v: panel.disponible + ' / ' + panel.deuda},",
+                  "            {k: 'Avisos', v: (panel.avisos || []).length}, {k: 'Secciones no disponibles', v: JSON.stringify(panel.noDisponibles)}],",
+                  "    muestra: JSON.stringify(cuenta, null, 2)});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MOVIL · Portada liviana (Bearer + gzip + ETag)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Encoding",
+                "value": "gzip"
+              }
+            ],
+            "url": "{{movil}}/movil/v1/inicio",
+            "description": "**Que cambia:** respuesta LIVIANA, solo lo que cabe en la pantalla del telefono (3 campos por cuenta), comprimida y con ETag.\n\n**Credencial:** Bearer JWT de la app (PKCE).\n\n**Que mirar:** Visualize y el encabezado ETag.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_movil}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// El access token de la app dura 5 minutos (banco-auth no entrega refresh token a un cliente publico).",
+                  "const expira = Number(pm.collectionVariables.get('token_movil_expira') || 0);",
+                  "if (!pm.collectionVariables.get('token_movil') || Date.now() > expira) {",
+                  "    console.warn('El token de la app vencio o no existe: ejecuta de nuevo la carpeta \"0 · Preparar credenciales\" (Run).');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                  "function visualizar(datos) {",
+                  "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                  "    datos.bytes = pm.response.size().body;",
+                  "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                  "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                  "}",
+                  "",
+                  "const inicio = pm.response.json();",
+                  "pm.test('portada movil', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('etag_movil', pm.response.headers.get('ETag'));",
+                  "const cuenta = (inicio.cuentas || [])[0] || {};",
+                  "visualizar({canal: 'BFF MOVIL · app', color: '#2E74B5',",
+                  "    idea: 'Respuesta liviana: solo lo que cabe en la pantalla, para gastar menos datos moviles.',",
+                  "    autenticacion: 'Bearer JWT del cliente publico banca-movil (azp = banca-movil)',",
+                  "    etag: pm.response.headers.get('ETag'), ncampos: Object.keys(cuenta).length, campos: Object.keys(cuenta),",
+                  "    extra: [{k: 'Campos de la portada', v: Object.keys(inicio).join(', ')}, {k: 'Cuentas', v: (inicio.cuentas || []).length}],",
+                  "    muestra: JSON.stringify(cuenta, null, 2)});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MOVIL · La misma portada con If-None-Match (304)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "{{etag_movil}}"
+              }
+            ],
+            "url": "{{movil}}/movil/v1/inicio",
+            "description": "**Que cambia:** si nada cambio, el BFF responde 304 SIN CUERPO y la app reutiliza lo que ya tenia.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_movil}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// El access token de la app dura 5 minutos (banco-auth no entrega refresh token a un cliente publico).",
+                  "const expira = Number(pm.collectionVariables.get('token_movil_expira') || 0);",
+                  "if (!pm.collectionVariables.get('token_movil') || Date.now() > expira) {",
+                  "    console.warn('El token de la app vencio o no existe: ejecuta de nuevo la carpeta \"0 · Preparar credenciales\" (Run).');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                  "function visualizar(datos) {",
+                  "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                  "    datos.bytes = pm.response.size().body;",
+                  "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                  "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                  "}",
+                  "",
+                  "pm.test('304 sin cuerpo', () => pm.response.to.have.status(304));",
+                  "visualizar({canal: 'BFF MOVIL · 304 Not Modified', color: '#2E74B5',",
+                  "    idea: 'Nada cambio desde la ultima vez: no viaja ningun dato.',",
+                  "    autenticacion: 'Bearer JWT de la app + If-None-Match: ' + pm.collectionVariables.get('etag_movil'), muestra: '(sin cuerpo)'});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CAJERO · Saldo en formato de pantalla (mTLS + HMAC + sesion)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{cajero}}/cajero/v1/saldo",
+            "description": "**Que cambia:** respuesta de PANTALLA: un mensaje listo para mostrar en el cajero.\n\n**Credencial:** certificado del terminal (mTLS) + firma HMAC de cada solicitud + sesion abierta con tarjeta y PIN (se renueva sola si vencio).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cajero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cripto = require('crypto-js');",
+                  "// Firma HMAC del terminal: canonica = METODO \\n RUTA \\n MARCA \\n NONCE \\n IDEMPOTENCY_KEY \\n sha256hex(cuerpo)",
+                  "function firmarCajero(metodo, ruta, cuerpo, clave) {",
+                  "    const marca = String(Math.floor(Date.now() / 1000));",
+                  "    const nonce = 'n-' + cripto.lib.WordArray.random(12).toString();",
+                  "    const canonica = [metodo, ruta, marca, nonce, clave || '',",
+                  "        cripto.SHA256(cuerpo || '').toString(cripto.enc.Hex)].join('\\n');",
+                  "    const firma = cripto.HmacSHA256(canonica, pm.collectionVariables.get('secreto_terminal')).toString(cripto.enc.Base64);",
+                  "    return {'X-Terminal-Id': pm.collectionVariables.get('terminal'), 'X-Marca-Tiempo': marca, 'X-Nonce': nonce, 'X-Firma': firma};",
+                  "}",
+                  "function firmarSolicitudActual() {",
+                  "    const url = pm.variables.replaceIn(pm.request.url.toString());",
+                  "    const ruta = url.replace(/^https?:\\/\\/[^/]+/, '');",
+                  "    const cuerpo = pm.request.body && pm.request.body.raw ? pm.variables.replaceIn(pm.request.body.raw) : '';",
+                  "    const encabezado = pm.request.headers.get('Idempotency-Key');",
+                  "    const clave = encabezado ? pm.variables.replaceIn(encabezado) : '';",
+                  "    const firma = firmarCajero(pm.request.method, ruta, cuerpo, clave);",
+                  "    Object.keys(firma).forEach(k => pm.request.headers.upsert({key: k, value: firma[k]}));",
+                  "}",
+                  "// Abre (o renueva) la sesion del cajero si no hay una vigente: dura 120 s.",
+                  "function conSesionCajero(despues) {",
+                  "    const expira = Number(pm.collectionVariables.get('token_cajero_expira') || 0);",
+                  "    if (pm.collectionVariables.get('token_cajero') && Date.now() < expira - 5000) { return despues(); }",
+                  "    const cuerpo = JSON.stringify({numeroTarjeta: pm.collectionVariables.get('tarjeta'), pin: pm.collectionVariables.get('pin')});",
+                  "    const firma = firmarCajero('POST', '/cajero/v1/sesiones', cuerpo, '');",
+                  "    const encabezados = [{key: 'Content-Type', value: 'application/json'}];",
+                  "    Object.keys(firma).forEach(k => encabezados.push({key: k, value: firma[k]}));",
+                  "    pm.sendRequest({url: pm.collectionVariables.get('cajero') + '/cajero/v1/sesiones', method: 'POST', header: encabezados,",
+                  "                    body: {mode: 'raw', raw: cuerpo}}, (error, respuesta) => {",
+                  "        if (!error && respuesta.code === 201) {",
+                  "            const sesion = respuesta.json();",
+                  "            pm.collectionVariables.set('token_cajero', sesion.tokenSesion);",
+                  "            pm.collectionVariables.set('token_cajero_expira', String(Date.now() + sesion.expiraEn * 1000));",
+                  "        }",
+                  "        despues();",
+                  "    });",
+                  "}",
+                  "",
+                  "conSesionCajero(firmarSolicitudActual);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                  "function visualizar(datos) {",
+                  "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                  "    datos.bytes = pm.response.size().body;",
+                  "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                  "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                  "}",
+                  "",
+                  "const pantalla = pm.response.json();",
+                  "pm.test('saldo del cajero', () => pm.response.to.have.status(200));",
+                  "visualizar({canal: 'BFF CAJERO · terminal ' + pm.collectionVariables.get('terminal'), color: '#8a6408',",
+                  "    idea: 'Respuesta de pantalla: el mensaje que muestra el cajero, no datos para procesar.',",
+                  "    autenticacion: 'Certificado del terminal (mTLS) + firma HMAC + tarjeta y PIN',",
+                  "    ncampos: Object.keys(pantalla).length, campos: Object.keys(pantalla),",
+                  "    extra: [{k: 'Firma enviada', v: pm.request.headers.get('X-Firma')}, {k: 'Nonce (un solo uso)', v: pm.request.headers.get('X-Nonce')}],",
+                  "    muestra: JSON.stringify(pantalla, null, 2)});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 · Lo que protege cada canal",
+      "description": "El rechazo propio de cada canal.",
+      "item": [
+        {
+          "name": "WEB · Sin cookie de sesion: 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{web}}/web/api/panel",
+            "description": "Sin la cookie de sesion la API no entrega datos (401 en JSON, no una pagina de login)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                  "function visualizar(datos) {",
+                  "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                  "    datos.bytes = pm.response.size().body;",
+                  "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                  "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                  "}",
+                  "",
+                  "function mostrarRechazo(canal, color, idea, esperado) {",
+                  "    pm.test('rechazado con ' + esperado, () => pm.response.to.have.status(esperado));",
+                  "    let cuerpo = {};",
+                  "    try { cuerpo = pm.response.json(); } catch (e) { cuerpo = {detalle: pm.response.text()}; }",
+                  "    visualizar({canal: canal, color: color, idea: idea, autenticacion: cuerpo.codigo || '', muestra: JSON.stringify(cuerpo, null, 2)});",
+                  "}",
+                  "",
+                  "mostrarRechazo('BFF WEB · sin sesion', '#215E3E', 'Sin cookie de sesion no hay datos.', 401);"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "disableCookies": true
+          }
+        },
+        {
+          "name": "WEB · Escritura sin token CSRF: 403",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{web}}/web/api/perfil",
+            "description": "La cookie sola no basta para escribir: falta el encabezado X-XSRF-TOKEN (proteccion CSRF).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"telefono\":\"+56 9 1111 2222\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                  "function visualizar(datos) {",
+                  "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                  "    datos.bytes = pm.response.size().body;",
+                  "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                  "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                  "}",
+                  "",
+                  "function mostrarRechazo(canal, color, idea, esperado) {",
+                  "    pm.test('rechazado con ' + esperado, () => pm.response.to.have.status(esperado));",
+                  "    let cuerpo = {};",
+                  "    try { cuerpo = pm.response.json(); } catch (e) { cuerpo = {detalle: pm.response.text()}; }",
+                  "    visualizar({canal: canal, color: color, idea: idea, autenticacion: cuerpo.codigo || '', muestra: JSON.stringify(cuerpo, null, 2)});",
+                  "}",
+                  "",
+                  "mostrarRechazo('BFF WEB · sin token CSRF', '#215E3E', 'Otra pagina no puede escribir con tu sesion.', 403);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MOVIL · Token valido de OTRO cliente OAuth: 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{movil}}/movil/v1/inicio",
+            "description": "Se pide un token client_credentials de bff-cajero (firmado por banco-auth, vigente) y se usa en el BFF movil: se rechaza porque azp no es banca-movil.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_otro_cliente}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cripto = require('crypto-js');",
+                  "pm.sendRequest({url: pm.collectionVariables.get('auth') + '/oauth2/token', method: 'POST',",
+                  "    header: [{key: 'Authorization', value: 'Basic ' + cripto.enc.Base64.stringify(cripto.enc.Utf8.parse(",
+                  "        'bff-cajero:' + pm.collectionVariables.get('secreto_bff_cajero')))}],",
+                  "    body: {mode: 'urlencoded', urlencoded: [{key: 'grant_type', value: 'client_credentials'}, {key: 'scope', value: 'cajero.operar'}]}},",
+                  "    (error, respuesta) => { if (!error) { pm.collectionVariables.set('token_otro_cliente', respuesta.json().access_token); } });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                  "function visualizar(datos) {",
+                  "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                  "    datos.bytes = pm.response.size().body;",
+                  "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                  "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                  "}",
+                  "",
+                  "function mostrarRechazo(canal, color, idea, esperado) {",
+                  "    pm.test('rechazado con ' + esperado, () => pm.response.to.have.status(esperado));",
+                  "    let cuerpo = {};",
+                  "    try { cuerpo = pm.response.json(); } catch (e) { cuerpo = {detalle: pm.response.text()}; }",
+                  "    visualizar({canal: canal, color: color, idea: idea, autenticacion: cuerpo.codigo || '', muestra: JSON.stringify(cuerpo, null, 2)});",
+                  "}",
+                  "",
+                  "mostrarRechazo('BFF MOVIL · token de otro canal', '#2E74B5', 'Un token valido de bff-cajero no sirve en la app: azp distinto.', 401);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CAJERO · Firma alterada: 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{cajero}}/cajero/v1/saldo",
+            "description": "Con el certificado correcto pero la firma alterada, el BFF rechaza la solicitud.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cajero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cripto = require('crypto-js');",
+                  "// Firma HMAC del terminal: canonica = METODO \\n RUTA \\n MARCA \\n NONCE \\n IDEMPOTENCY_KEY \\n sha256hex(cuerpo)",
+                  "function firmarCajero(metodo, ruta, cuerpo, clave) {",
+                  "    const marca = String(Math.floor(Date.now() / 1000));",
+                  "    const nonce = 'n-' + cripto.lib.WordArray.random(12).toString();",
+                  "    const canonica = [metodo, ruta, marca, nonce, clave || '',",
+                  "        cripto.SHA256(cuerpo || '').toString(cripto.enc.Hex)].join('\\n');",
+                  "    const firma = cripto.HmacSHA256(canonica, pm.collectionVariables.get('secreto_terminal')).toString(cripto.enc.Base64);",
+                  "    return {'X-Terminal-Id': pm.collectionVariables.get('terminal'), 'X-Marca-Tiempo': marca, 'X-Nonce': nonce, 'X-Firma': firma};",
+                  "}",
+                  "function firmarSolicitudActual() {",
+                  "    const url = pm.variables.replaceIn(pm.request.url.toString());",
+                  "    const ruta = url.replace(/^https?:\\/\\/[^/]+/, '');",
+                  "    const cuerpo = pm.request.body && pm.request.body.raw ? pm.variables.replaceIn(pm.request.body.raw) : '';",
+                  "    const encabezado = pm.request.headers.get('Idempotency-Key');",
+                  "    const clave = encabezado ? pm.variables.replaceIn(encabezado) : '';",
+                  "    const firma = firmarCajero(pm.request.method, ruta, cuerpo, clave);",
+                  "    Object.keys(firma).forEach(k => pm.request.headers.upsert({key: k, value: firma[k]}));",
+                  "}",
+                  "// Abre (o renueva) la sesion del cajero si no hay una vigente: dura 120 s.",
+                  "function conSesionCajero(despues) {",
+                  "    const expira = Number(pm.collectionVariables.get('token_cajero_expira') || 0);",
+                  "    if (pm.collectionVariables.get('token_cajero') && Date.now() < expira - 5000) { return despues(); }",
+                  "    const cuerpo = JSON.stringify({numeroTarjeta: pm.collectionVariables.get('tarjeta'), pin: pm.collectionVariables.get('pin')});",
+                  "    const firma = firmarCajero('POST', '/cajero/v1/sesiones', cuerpo, '');",
+                  "    const encabezados = [{key: 'Content-Type', value: 'application/json'}];",
+                  "    Object.keys(firma).forEach(k => encabezados.push({key: k, value: firma[k]}));",
+                  "    pm.sendRequest({url: pm.collectionVariables.get('cajero') + '/cajero/v1/sesiones', method: 'POST', header: encabezados,",
+                  "                    body: {mode: 'raw', raw: cuerpo}}, (error, respuesta) => {",
+                  "        if (!error && respuesta.code === 201) {",
+                  "            const sesion = respuesta.json();",
+                  "            pm.collectionVariables.set('token_cajero', sesion.tokenSesion);",
+                  "            pm.collectionVariables.set('token_cajero_expira', String(Date.now() + sesion.expiraEn * 1000));",
+                  "        }",
+                  "        despues();",
+                  "    });",
+                  "}",
+                  "",
+                  "conSesionCajero(() => { firmarSolicitudActual(); pm.request.headers.upsert({key: 'X-Firma', value: 'AAAAfirmaAlterada='}); });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Tarjeta comparativa en la pestana Visualize (Body > Visualize).",
+                  "function visualizar(datos) {",
+                  "    datos.estado = pm.response.code + ' ' + pm.response.status;",
+                  "    datos.bytes = pm.response.size().body;",
+                  "    datos.encoding = pm.response.headers.get('Content-Encoding') || '';",
+                  "    pm.visualizer.set(pm.collectionVariables.get('plantilla_visual'), datos);",
+                  "}",
+                  "",
+                  "function mostrarRechazo(canal, color, idea, esperado) {",
+                  "    pm.test('rechazado con ' + esperado, () => pm.response.to.have.status(esperado));",
+                  "    let cuerpo = {};",
+                  "    try { cuerpo = pm.response.json(); } catch (e) { cuerpo = {detalle: pm.response.text()}; }",
+                  "    visualizar({canal: canal, color: color, idea: idea, autenticacion: cuerpo.codigo || '', muestra: JSON.stringify(cuerpo, null, 2)});",
+                  "}",
+                  "",
+                  "mostrarRechazo('BFF CAJERO · firma alterada', '#8a6408', 'Una solicitud modificada en el camino no se atiende.', 401);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 · Operaciones por canal",
+      "description": "El mismo pago con contratos distintos y el retiro idempotente.",
+      "item": [
+        {
+          "name": "WEB · Deposito de $5.000 (recarga la cuenta para repetir la demo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-XSRF-TOKEN",
+                "value": "{{xsrf}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{clave_deposito}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{web}}/web/api/pagos/depositos",
+            "description": "Deposito en la cuenta de ahorro: asi las transferencias y el retiro siguientes no la dejan sin saldo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"cuentaDestino\":{{cuenta}},\"monto\":5000}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('clave_deposito', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 aceptado', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "WEB · Transferencia (cookie + X-XSRF-TOKEN + Idempotency-Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-XSRF-TOKEN",
+                "value": "{{xsrf}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{clave_pago_web}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{web}}/web/api/pagos/transferencias",
+            "description": "Contrato web: cuentaOrigen, cuentaDestino, monto. Responde 202: la saga sigue por Kafka.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"cuentaOrigen\":{{cuenta}},\"cuentaDestino\":{{cuenta_destino}},\"monto\":1000}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('clave_pago_web', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 aceptada', () => pm.response.to.have.status(202));",
+                  "pm.collectionVariables.set('pago_id', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "WEB · Estado del pago",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{web}}/web/api/pagos/{{pago_id}}",
+            "description": "SOLICITADO -> COMPLETADO o RECHAZADO cuando cuentas-service confirma por Kafka."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('estado del pago', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MOVIL · Transferencia (Bearer + Idempotency-Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{clave_pago_movil}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{movil}}/movil/v1/transferencias",
+            "description": "Contrato movil (distinto del web): origen, destino, monto. Respuesta corta con el estado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"origen\":{{cuenta}},\"destino\":{{cuenta_destino}},\"monto\":1000}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_movil}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// El access token de la app dura 5 minutos (banco-auth no entrega refresh token a un cliente publico).",
+                  "const expira = Number(pm.collectionVariables.get('token_movil_expira') || 0);",
+                  "if (!pm.collectionVariables.get('token_movil') || Date.now() > expira) {",
+                  "    console.warn('El token de la app vencio o no existe: ejecuta de nuevo la carpeta \"0 · Preparar credenciales\" (Run).');",
+                  "}",
+                  "",
+                  "pm.collectionVariables.set('clave_pago_movil', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 aceptada', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CAJERO · Retiro de $1.000 (Idempotency-Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{clave_retiro}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{cajero}}/cajero/v1/retiros",
+            "description": "Retiro firmado con su Idempotency-Key. Respuesta: comprobante y saldo restante.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"monto\":1000}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cajero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cripto = require('crypto-js');",
+                  "// Firma HMAC del terminal: canonica = METODO \\n RUTA \\n MARCA \\n NONCE \\n IDEMPOTENCY_KEY \\n sha256hex(cuerpo)",
+                  "function firmarCajero(metodo, ruta, cuerpo, clave) {",
+                  "    const marca = String(Math.floor(Date.now() / 1000));",
+                  "    const nonce = 'n-' + cripto.lib.WordArray.random(12).toString();",
+                  "    const canonica = [metodo, ruta, marca, nonce, clave || '',",
+                  "        cripto.SHA256(cuerpo || '').toString(cripto.enc.Hex)].join('\\n');",
+                  "    const firma = cripto.HmacSHA256(canonica, pm.collectionVariables.get('secreto_terminal')).toString(cripto.enc.Base64);",
+                  "    return {'X-Terminal-Id': pm.collectionVariables.get('terminal'), 'X-Marca-Tiempo': marca, 'X-Nonce': nonce, 'X-Firma': firma};",
+                  "}",
+                  "function firmarSolicitudActual() {",
+                  "    const url = pm.variables.replaceIn(pm.request.url.toString());",
+                  "    const ruta = url.replace(/^https?:\\/\\/[^/]+/, '');",
+                  "    const cuerpo = pm.request.body && pm.request.body.raw ? pm.variables.replaceIn(pm.request.body.raw) : '';",
+                  "    const encabezado = pm.request.headers.get('Idempotency-Key');",
+                  "    const clave = encabezado ? pm.variables.replaceIn(encabezado) : '';",
+                  "    const firma = firmarCajero(pm.request.method, ruta, cuerpo, clave);",
+                  "    Object.keys(firma).forEach(k => pm.request.headers.upsert({key: k, value: firma[k]}));",
+                  "}",
+                  "// Abre (o renueva) la sesion del cajero si no hay una vigente: dura 120 s.",
+                  "function conSesionCajero(despues) {",
+                  "    const expira = Number(pm.collectionVariables.get('token_cajero_expira') || 0);",
+                  "    if (pm.collectionVariables.get('token_cajero') && Date.now() < expira - 5000) { return despues(); }",
+                  "    const cuerpo = JSON.stringify({numeroTarjeta: pm.collectionVariables.get('tarjeta'), pin: pm.collectionVariables.get('pin')});",
+                  "    const firma = firmarCajero('POST', '/cajero/v1/sesiones', cuerpo, '');",
+                  "    const encabezados = [{key: 'Content-Type', value: 'application/json'}];",
+                  "    Object.keys(firma).forEach(k => encabezados.push({key: k, value: firma[k]}));",
+                  "    pm.sendRequest({url: pm.collectionVariables.get('cajero') + '/cajero/v1/sesiones', method: 'POST', header: encabezados,",
+                  "                    body: {mode: 'raw', raw: cuerpo}}, (error, respuesta) => {",
+                  "        if (!error && respuesta.code === 201) {",
+                  "            const sesion = respuesta.json();",
+                  "            pm.collectionVariables.set('token_cajero', sesion.tokenSesion);",
+                  "            pm.collectionVariables.set('token_cajero_expira', String(Date.now() + sesion.expiraEn * 1000));",
+                  "        }",
+                  "        despues();",
+                  "    });",
+                  "}",
+                  "",
+                  "pm.collectionVariables.set('clave_retiro', pm.variables.replaceIn('{{$guid}}'));",
+                  "conSesionCajero(firmarSolicitudActual);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('retiro realizado', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('comprobante', pm.response.json().comprobante);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CAJERO · Reintento del mismo retiro (mismo comprobante)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{clave_retiro}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{cajero}}/cajero/v1/retiros",
+            "description": "El terminal reintenta con la MISMA Idempotency-Key: devuelve el mismo comprobante (Idempotency-Replayed) y no descuenta dos veces.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"monto\":1000}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_cajero}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cripto = require('crypto-js');",
+                  "// Firma HMAC del terminal: canonica = METODO \\n RUTA \\n MARCA \\n NONCE \\n IDEMPOTENCY_KEY \\n sha256hex(cuerpo)",
+                  "function firmarCajero(metodo, ruta, cuerpo, clave) {",
+                  "    const marca = String(Math.floor(Date.now() / 1000));",
+                  "    const nonce = 'n-' + cripto.lib.WordArray.random(12).toString();",
+                  "    const canonica = [metodo, ruta, marca, nonce, clave || '',",
+                  "        cripto.SHA256(cuerpo || '').toString(cripto.enc.Hex)].join('\\n');",
+                  "    const firma = cripto.HmacSHA256(canonica, pm.collectionVariables.get('secreto_terminal')).toString(cripto.enc.Base64);",
+                  "    return {'X-Terminal-Id': pm.collectionVariables.get('terminal'), 'X-Marca-Tiempo': marca, 'X-Nonce': nonce, 'X-Firma': firma};",
+                  "}",
+                  "function firmarSolicitudActual() {",
+                  "    const url = pm.variables.replaceIn(pm.request.url.toString());",
+                  "    const ruta = url.replace(/^https?:\\/\\/[^/]+/, '');",
+                  "    const cuerpo = pm.request.body && pm.request.body.raw ? pm.variables.replaceIn(pm.request.body.raw) : '';",
+                  "    const encabezado = pm.request.headers.get('Idempotency-Key');",
+                  "    const clave = encabezado ? pm.variables.replaceIn(encabezado) : '';",
+                  "    const firma = firmarCajero(pm.request.method, ruta, cuerpo, clave);",
+                  "    Object.keys(firma).forEach(k => pm.request.headers.upsert({key: k, value: firma[k]}));",
+                  "}",
+                  "// Abre (o renueva) la sesion del cajero si no hay una vigente: dura 120 s.",
+                  "function conSesionCajero(despues) {",
+                  "    const expira = Number(pm.collectionVariables.get('token_cajero_expira') || 0);",
+                  "    if (pm.collectionVariables.get('token_cajero') && Date.now() < expira - 5000) { return despues(); }",
+                  "    const cuerpo = JSON.stringify({numeroTarjeta: pm.collectionVariables.get('tarjeta'), pin: pm.collectionVariables.get('pin')});",
+                  "    const firma = firmarCajero('POST', '/cajero/v1/sesiones', cuerpo, '');",
+                  "    const encabezados = [{key: 'Content-Type', value: 'application/json'}];",
+                  "    Object.keys(firma).forEach(k => encabezados.push({key: k, value: firma[k]}));",
+                  "    pm.sendRequest({url: pm.collectionVariables.get('cajero') + '/cajero/v1/sesiones', method: 'POST', header: encabezados,",
+                  "                    body: {mode: 'raw', raw: cuerpo}}, (error, respuesta) => {",
+                  "        if (!error && respuesta.code === 201) {",
+                  "            const sesion = respuesta.json();",
+                  "            pm.collectionVariables.set('token_cajero', sesion.tokenSesion);",
+                  "            pm.collectionVariables.set('token_cajero_expira', String(Date.now() + sesion.expiraEn * 1000));",
+                  "        }",
+                  "        despues();",
+                  "    });",
+                  "}",
+                  "",
+                  "conSesionCajero(firmarSolicitudActual);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('mismo comprobante', () => pm.expect(pm.response.json().comprobante).to.eql(pm.collectionVariables.get('comprobante')));",
+                  "pm.test('marcado como reintento', () => pm.expect(pm.response.headers.get('Idempotency-Replayed')).to.eql('true'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "web",
+      "value": "https://localhost:8090"
+    },
+    {
+      "key": "movil",
+      "value": "https://localhost:8091"
+    },
+    {
+      "key": "cajero",
+      "value": "https://localhost:8083"
+    },
+    {
+      "key": "auth",
+      "value": "https://localhost:8081"
+    },
+    {
+      "key": "auth_movil",
+      "value": "https://127.0.0.1:8081"
+    },
+    {
+      "key": "redireccion_movil",
+      "value": "http://127.0.0.1:8099/callback"
+    },
+    {
+      "key": "usuario",
+      "value": "diana.prince"
+    },
+    {
+      "key": "clave",
+      "value": "Cliente2026!"
+    },
+    {
+      "key": "cuenta",
+      "value": "121"
+    },
+    {
+      "key": "cuenta_destino",
+      "value": "101"
+    },
+    {
+      "key": "tarjeta",
+      "value": "4000000000001216"
+    },
+    {
+      "key": "pin",
+      "value": "1234"
+    },
+    {
+      "key": "terminal",
+      "value": "ATM-001"
+    },
+    {
+      "key": "secreto_terminal",
+      "value": "atm-001-secreto-de-desarrollo-0123456789"
+    },
+    {
+      "key": "secreto_bff_cajero",
+      "value": "bff-cajero-oauth-dev"
+    },
+    {
+      "key": "plantilla_visual",
+      "value": "<style>body{font-family:-apple-system,'Segoe UI',Helvetica,sans-serif;margin:0;padding:12px;color:#1d2a24;background:#fff}\n.tarjeta{border:2px solid {{color}};border-radius:12px;padding:14px 16px}h2{margin:0 0 4px;color:{{color}};font-size:20px}\n.idea{color:#4a5550;margin:0 0 10px;font-size:13px}table{border-collapse:collapse;width:100%;font-size:13px}\ntd{padding:5px 8px;border-bottom:1px solid #e3e8e5;vertical-align:top}td:first-child{color:#4a5550;width:180px;font-weight:600}\n.chip{display:inline-block;background:#eef3f0;border-radius:10px;padding:1px 8px;margin:2px;font-family:Menlo,monospace;font-size:12px}\npre{background:#f5f7f6;border-radius:8px;padding:10px;font-size:12px;white-space:pre-wrap;margin:10px 0 0}</style>\n<div class=\"tarjeta\"><h2>{{canal}}</h2><p class=\"idea\">{{idea}}</p><table>\n<tr><td>Estado HTTP</td><td>{{estado}}</td></tr><tr><td>Credencial</td><td>{{autenticacion}}</td></tr>\n<tr><td>Cuerpo</td><td>{{bytes}} bytes{{#if encoding}} · viaja comprimido ({{encoding}}){{/if}}</td></tr>\n{{#if etag}}<tr><td>ETag</td><td>{{etag}}</td></tr>{{/if}}\n{{#if ncampos}}<tr><td>Campos</td><td><b>{{ncampos}}</b> {{#each campos}}<span class=\"chip\">{{this}}</span>{{/each}}</td></tr>{{/if}}\n{{#each extra}}<tr><td>{{this.k}}</td><td>{{this.v}}</td></tr>{{/each}}</table><pre>{{muestra}}</pre></div>"
+    }
+  ]
+}
